@@ -21,6 +21,39 @@ Rules:
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const rewriteCache = new Map();
+const OUTPUT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["grammar_fixed", "rewritten", "tones"],
+  properties: {
+    grammar_fixed: {
+      type: "string",
+    },
+    rewritten: {
+      type: "string",
+    },
+    tones: {
+      type: "array",
+      minItems: 4,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "label", "text"],
+        properties: {
+          id: {
+            type: "string",
+          },
+          label: {
+            type: "string",
+          },
+          text: {
+            type: "string",
+          },
+        },
+      },
+    },
+  },
+};
 
 function getProviderModel(settings) {
   const provider = settings.provider || process.env.LLM_PROVIDER || "openrouter";
@@ -29,8 +62,8 @@ function getProviderModel(settings) {
     provider,
     model:
       provider === "openai"
-        ? settings.openaiModel || process.env.OPENAI_MODEL || "gpt-5-mini"
-        : settings.openrouterModel || process.env.OPENROUTER_MODEL || "openai/gpt-5-mini",
+        ? settings.openaiModel || process.env.OPENAI_MODEL || "gpt-4.1-mini"
+        : settings.openrouterModel || process.env.OPENROUTER_MODEL || "openai/gpt-4.1-mini",
   };
 }
 
@@ -95,13 +128,249 @@ function extractOpenRouterOutputText(payload) {
     return content;
   }
 
+  if (Array.isArray(content)) {
+    const text = content
+      .map((part) => {
+        if (typeof part === "string") {
+          return part;
+        }
+
+        if (typeof part?.text === "string") {
+          return part.text;
+        }
+
+        if (typeof part?.content === "string") {
+          return part.content;
+        }
+
+        return "";
+      })
+      .join("\n")
+      .trim();
+
+    if (text) {
+      return text;
+    }
+  }
+
   throw new Error("The OpenRouter response did not include any text output.");
 }
 
-async function callOpenAI(inputText, settings) {
+function stripMarkdownCodeFence(text) {
+  const fencedMatch = text.trim().match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fencedMatch ? fencedMatch[1].trim() : text.trim();
+}
+
+function extractFirstJsonObject(text) {
+  const start = text.indexOf("{");
+
+  if (start === -1) {
+    return null;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+
+      if (depth === 0) {
+        return text.slice(start, index + 1);
+      }
+    }
+  }
+
+  return text.slice(start);
+}
+
+function escapeRawControlCharsInStrings(text) {
+  let result = "";
+  let inString = false;
+  let escaped = false;
+
+  for (const char of text) {
+    if (escaped) {
+      result += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      result += char;
+      escaped = true;
+      continue;
+    }
+
+    if (char === "\"") {
+      result += char;
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      if (char === "\n") {
+        result += "\\n";
+        continue;
+      }
+
+      if (char === "\r") {
+        result += "\\r";
+        continue;
+      }
+
+      if (char === "\t") {
+        result += "\\t";
+        continue;
+      }
+    }
+
+    result += char;
+  }
+
+  return result;
+}
+
+function parseJsonCandidate(text) {
+  const normalized = stripMarkdownCodeFence(text);
+  const directCandidates = [normalized, extractFirstJsonObject(normalized)].filter(Boolean);
+
+  for (const candidate of directCandidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch (error) {
+      // Keep trying repair strategies below.
+    }
+
+    try {
+      return JSON.parse(escapeRawControlCharsInStrings(candidate));
+    } catch (error) {
+      // Keep trying other candidates.
+    }
+
+    try {
+      const parsed = JSON.parse(JSON.parse(candidate));
+      return parsed;
+    } catch (error) {
+      // Keep trying other candidates.
+    }
+  }
+
+  throw new Error("The AI returned malformed JSON.");
+}
+
+function toToneId(label = "", fallbackIndex = 0) {
+  const normalized = String(label)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return normalized || `tone_${fallbackIndex + 1}`;
+}
+
+function normalizeRewritePayload(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const grammarFixed =
+    value.grammar_fixed || value.grammarFixed || value.grammar || value.corrected || value.edited;
+  const rewritten =
+    value.rewritten || value.rewrite || value.improved || value.improved_rewrite || value.polished;
+
+  let tones = [];
+
+  if (Array.isArray(value.tones)) {
+    tones = value.tones
+      .map((tone, index) => {
+        if (!tone || typeof tone !== "object") {
+          return null;
+        }
+
+        const label = tone.label || tone.name || tone.id || `Tone ${index + 1}`;
+        const text = tone.text || tone.value || tone.content || tone.rewrite;
+
+        if (!text) {
+          return null;
+        }
+
+        return {
+          id: tone.id || toToneId(label, index),
+          label,
+          text,
+        };
+      })
+      .filter(Boolean);
+  } else {
+    const toneSources = [
+      ["casual", value.casual],
+      ["friendly", value.friendly],
+      ["formal", value.formal],
+      ["professional", value.professional],
+    ];
+
+    tones = toneSources
+      .map(([id, text]) => {
+        if (!text || typeof text !== "string") {
+          return null;
+        }
+
+        return {
+          id,
+          label: id.charAt(0).toUpperCase() + id.slice(1),
+          text,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  if (!grammarFixed || !rewritten || tones.length === 0) {
+    return null;
+  }
+
+  return {
+    grammar_fixed: grammarFixed,
+    rewritten,
+    tones,
+  };
+}
+
+async function callOpenAI(inputText, settings, options = {}) {
   const apiKey = settings.openaiApiKey || process.env.OPENAI_API_KEY;
-  const model = settings.openaiModel || process.env.OPENAI_MODEL || "gpt-5-mini";
+  const model = settings.openaiModel || process.env.OPENAI_MODEL || "gpt-4.1-mini";
   const baseUrl = settings.openaiBaseUrl || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+  const instructions = options.instructions || SYSTEM_PROMPT;
+  const textFormat = options.textFormat || {
+    type: "json_schema",
+    name: "rewrite_result",
+    strict: true,
+    schema: OUTPUT_SCHEMA,
+  };
 
   if (!apiKey) {
     throw new Error("Missing OpenAI API key. Add it in Settings or your .env file.");
@@ -115,14 +384,12 @@ async function callOpenAI(inputText, settings) {
     },
     body: JSON.stringify({
       model,
-      instructions: SYSTEM_PROMPT,
+      instructions,
       input: inputText,
-      max_output_tokens: 700,
+      max_output_tokens: 1500,
       temperature: 0.4,
       text: {
-        format: {
-          type: "json_object",
-        },
+        format: textFormat,
       },
     }),
   });
@@ -136,14 +403,52 @@ async function callOpenAI(inputText, settings) {
   return extractOpenAIOutputText(payload);
 }
 
-async function callOpenRouter(inputText, settings) {
+async function repairMalformedJson(rawOutputText, settings) {
+  const provider = settings.provider || process.env.LLM_PROVIDER || "openrouter";
+  const repairSystemPrompt = `
+You repair malformed JSON.
+Return only valid JSON using this schema:
+${JSON.stringify(OUTPUT_SCHEMA, null, 2)}
+  `.trim();
+  const repairPrompt = `
+Convert this malformed JSON-like text into valid JSON without changing the intended wording more than necessary:
+
+${rawOutputText}
+  `.trim();
+
+  const repairedText =
+    provider === "openai"
+      ? await callOpenAI(repairPrompt, settings, {
+          instructions: repairSystemPrompt,
+          textFormat: {
+            type: "json_schema",
+            name: "rewrite_result_repair",
+            strict: true,
+            schema: OUTPUT_SCHEMA,
+          },
+        })
+      : await callOpenRouter(repairPrompt, settings, {
+          systemPrompt: repairSystemPrompt,
+          responseFormat: {
+            type: "json_object",
+          },
+        });
+
+  return parseJsonCandidate(repairedText);
+}
+
+async function callOpenRouter(inputText, settings, options = {}) {
   const apiKey = settings.openrouterApiKey || process.env.OPENROUTER_API_KEY;
-  const model = settings.openrouterModel || process.env.OPENROUTER_MODEL || "openai/gpt-5-mini";
+  const model = settings.openrouterModel || process.env.OPENROUTER_MODEL || "openai/gpt-4.1-mini";
   const baseUrl =
     settings.openrouterBaseUrl || process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
   const httpReferer =
     settings.openrouterHttpReferer || process.env.OPENROUTER_HTTP_REFERER || "https://example.com";
   const appTitle = settings.openrouterAppTitle || process.env.OPENROUTER_APP_TITLE || "Quick Rewrite";
+  const systemPrompt = options.systemPrompt || SYSTEM_PROMPT;
+  const responseFormat = options.responseFormat || {
+    type: "json_object",
+  };
 
   if (!apiKey) {
     throw new Error("Missing OpenRouter API key. Add it in Settings or your .env file.");
@@ -162,18 +467,16 @@ async function callOpenRouter(inputText, settings) {
       messages: [
         {
           role: "system",
-          content: SYSTEM_PROMPT,
+          content: systemPrompt,
         },
         {
           role: "user",
           content: inputText,
         },
       ],
-      max_tokens: 700,
+      max_tokens: 1500,
       temperature: 0.4,
-      response_format: {
-        type: "json_object",
-      },
+      response_format: responseFormat,
     }),
   });
 
@@ -205,7 +508,15 @@ async function rewriteText(inputText, settings = {}) {
     provider === "openai"
       ? await callOpenAI(inputText, settings)
       : await callOpenRouter(inputText, settings);
-  const parsed = JSON.parse(outputText);
+  let parsed;
+
+  try {
+    parsed = parseJsonCandidate(outputText);
+  } catch (error) {
+    parsed = await repairMalformedJson(outputText, settings);
+  }
+
+  parsed = normalizeRewritePayload(parsed) || parsed;
 
   if (!parsed.grammar_fixed || !parsed.rewritten || !Array.isArray(parsed.tones)) {
     throw new Error("The AI response JSON was missing expected fields.");

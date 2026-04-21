@@ -1,3 +1,4 @@
+// ── DOM references ──────────────────────────────────────────────────────────
 const sourceText = document.getElementById("sourceText");
 const statusText = document.getElementById("statusText");
 const shortcutText = document.getElementById("shortcutText");
@@ -31,11 +32,16 @@ const loadingState = document.getElementById("loadingState");
 const emptyState = document.getElementById("emptyState");
 const resultsContainer = document.getElementById("resultsContainer");
 const cardTemplate = document.getElementById("cardTemplate");
+const openrouterBlock = document.getElementById("openrouterBlock");
+const openaiBlock = document.getElementById("openaiBlock");
+
+// ── State ────────────────────────────────────────────────────────────────────
 let currentSettings = null;
 let currentPermissions = null;
 let hasAutoOpenedSetup = false;
 let requestStartedAt = 0;
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
 function escapeHtml(text) {
   return text
     .replaceAll("&", "&amp;")
@@ -49,8 +55,7 @@ function setStatus(message, isError = false) {
 }
 
 function getWordCount(text) {
-  const words = text.trim().split(/\s+/).filter(Boolean);
-  return words.length;
+  return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
 function updateSourceMeta() {
@@ -60,12 +65,21 @@ function updateSourceMeta() {
   providerPill.textContent = currentSettings?.provider === "openai" ? "OpenAI" : "OpenRouter";
 }
 
+/** Returns true if the active provider has an API key configured. */
+function isProviderConfigured() {
+  const provider = currentSettings?.provider || "openrouter";
+  return provider === "openai"
+    ? Boolean(currentSettings?.openaiApiKey)
+    : Boolean(currentSettings?.openrouterApiKey);
+}
+
+// ── UI state ─────────────────────────────────────────────────────────────────
 function showLoadingState() {
   resultsContainer.innerHTML = "";
   emptyState.classList.add("isHidden");
   resultsSummary.classList.remove("isHidden");
   loadingState.classList.remove("isHidden");
-  latencyPill.textContent = "Thinking...";
+  latencyPill.textContent = "Thinking…";
   cachePill.textContent = "Fresh";
 }
 
@@ -75,7 +89,6 @@ function hideLoadingState() {
 
 function renderCard(title, text) {
   const fragment = cardTemplate.content.cloneNode(true);
-  const card = fragment.querySelector(".resultCard");
   const badgeNode = fragment.querySelector(".resultBadge");
   const titleNode = fragment.querySelector(".resultTitle");
   const bodyNode = fragment.querySelector(".resultBody");
@@ -87,10 +100,19 @@ function renderCard(title, text) {
 
   copyButton.addEventListener("click", async () => {
     await window.rewriteHelper.copyText(text);
+
+    // Visual feedback: flash green for 1.5 s then revert
+    copyButton.textContent = "Copied!";
+    copyButton.classList.add("copyDone");
+    setTimeout(() => {
+      copyButton.textContent = "Copy";
+      copyButton.classList.remove("copyDone");
+    }, 1500);
+
     setStatus(`Copied ${title.toLowerCase()} to clipboard.`);
   });
 
-  resultsContainer.appendChild(card);
+  resultsContainer.appendChild(fragment);
 }
 
 function renderResults(payload) {
@@ -116,6 +138,13 @@ function showTab(name) {
   showSettingsTab.classList.toggle("isActive", name === "settings");
 }
 
+// ── Settings ──────────────────────────────────────────────────────────────────
+function updateProviderSections() {
+  const isOpenRouter = settingsForm.provider.value === "openrouter";
+  openrouterBlock.classList.toggle("isHidden", !isOpenRouter);
+  openaiBlock.classList.toggle("isHidden", isOpenRouter);
+}
+
 function populateSettingsForm(settings) {
   currentSettings = settings;
   settingsForm.shortcut.value = settings.shortcut || "";
@@ -129,9 +158,11 @@ function populateSettingsForm(settings) {
   settingsForm.openaiModel.value = settings.openaiModel || "";
   settingsForm.openaiBaseUrl.value = settings.openaiBaseUrl || "";
   shortcutText.textContent = settings.shortcut || "";
+  updateProviderSections();
   updateSourceMeta();
 }
 
+// ── Permissions ──────────────────────────────────────────────────────────────
 function setPillState(node, state, text) {
   node.classList.remove("isReady", "isWarn", "isMuted");
   if (state === "ready") {
@@ -178,6 +209,7 @@ function renderPermissions(status) {
   providerDetail.textContent = `Current provider: ${status.provider}`;
 }
 
+// ── Rewrite ───────────────────────────────────────────────────────────────────
 async function runRewrite() {
   const text = sourceText.value.trim();
 
@@ -186,11 +218,19 @@ async function runRewrite() {
     return;
   }
 
+  // Guard: catch missing API key before hitting the network
+  if (!isProviderConfigured()) {
+    const providerName = currentSettings?.provider === "openai" ? "OpenAI" : "OpenRouter";
+    setStatus(`No API key set for ${providerName}. Opening Settings…`, true);
+    setTimeout(() => showTab("settings"), 700);
+    return;
+  }
+
   rewriteButton.disabled = true;
-  rewriteButton.textContent = "Generating...";
+  rewriteButton.textContent = "Generating…";
   requestStartedAt = Date.now();
   showLoadingState();
-  setStatus("Creating rewrite suggestions...");
+  setStatus("Creating rewrite suggestions…");
 
   try {
     const result = await window.rewriteHelper.runRewrite(text);
@@ -210,6 +250,7 @@ async function runRewrite() {
   }
 }
 
+// ── Event listeners ───────────────────────────────────────────────────────────
 rewriteButton.addEventListener("click", runRewrite);
 
 clearButton.addEventListener("click", () => {
@@ -230,11 +271,14 @@ showRewriteTab.addEventListener("click", () => showTab("rewrite"));
 showPermissionsTab.addEventListener("click", () => showTab("permissions"));
 showSettingsTab.addEventListener("click", () => showTab("settings"));
 
+// Show only the active provider's settings fields
+settingsForm.provider.addEventListener("change", updateProviderSections);
+
 settingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   saveSettingsButton.disabled = true;
-  saveSettingsButton.textContent = "Saving...";
-  setStatus("Saving settings...");
+  saveSettingsButton.textContent = "Saving…";
+  setStatus("Saving settings…");
 
   try {
     const saved = await window.rewriteHelper.saveSettings({
@@ -262,7 +306,7 @@ settingsForm.addEventListener("submit", async (event) => {
 });
 
 refreshPermissionsButton.addEventListener("click", async () => {
-  setStatus("Refreshing permission status...");
+  setStatus("Refreshing permission status…");
   try {
     const status = await window.rewriteHelper.refreshPermissions();
     renderPermissions(status);
@@ -273,7 +317,7 @@ refreshPermissionsButton.addEventListener("click", async () => {
 });
 
 requestAccessibilityButton.addEventListener("click", async () => {
-  setStatus("Opening accessibility permission prompt...");
+  setStatus("Opening accessibility permission prompt…");
   try {
     const status = await window.rewriteHelper.requestAccessibilityPermission();
     renderPermissions(status);
@@ -295,22 +339,53 @@ openPermissionSettingsButton.addEventListener("click", async () => {
 
 sourceText.addEventListener("input", updateSourceMeta);
 
+// Keyboard shortcuts
+document.addEventListener("keydown", (event) => {
+  // Cmd/Ctrl+Enter → generate
+  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    event.preventDefault();
+    if (!rewriteButton.disabled) {
+      runRewrite();
+    }
+    return;
+  }
+
+  // Escape → hide window (only when not editing a form field)
+  if (event.key === "Escape") {
+    const tag = document.activeElement?.tagName;
+    if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") {
+      window.rewriteHelper.hideWindow();
+    }
+  }
+});
+
+// ── IPC event handlers ────────────────────────────────────────────────────────
 window.rewriteHelper.onSelectionLoaded(({ selectedText, shortcut, settings }) => {
   if (settings) {
     populateSettingsForm(settings);
   }
-  if (selectedText) {
-    sourceText.value = selectedText;
-    setStatus("Selected text loaded.");
-  } else {
-    setStatus("No fresh selection found. You can paste text manually.", true);
-  }
 
   shortcutText.textContent = shortcut;
-  updateSourceMeta();
-  sourceText.focus();
-  sourceText.select();
   showTab("rewrite");
+
+  if (selectedText) {
+    sourceText.value = selectedText;
+    updateSourceMeta();
+    setStatus("Selected text loaded.");
+    sourceText.focus();
+    sourceText.select();
+
+    // Auto-generate immediately if an API key is already configured
+    if (isProviderConfigured()) {
+      runRewrite();
+    } else {
+      const providerName = currentSettings?.provider === "openai" ? "OpenAI" : "OpenRouter";
+      setStatus(`Add a ${providerName} API key in Settings to start generating.`, true);
+    }
+  } else {
+    setStatus("No fresh selection found. You can paste text manually.", true);
+    sourceText.focus();
+  }
 });
 
 window.rewriteHelper.onSelectionError(({ message, shortcut, settings }) => {
@@ -335,6 +410,7 @@ window.rewriteHelper.onPermissionsLoaded((status) => {
   }
 });
 
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
 window.rewriteHelper.getSettings().then((settings) => {
   if (settings) {
     populateSettingsForm(settings);
