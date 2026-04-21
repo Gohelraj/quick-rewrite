@@ -105,8 +105,8 @@ Releases are built automatically by GitHub Actions whenever a version tag is pus
 ```bash
 # Bump the version in package.json first, then:
 git add package.json
-git commit -m "chore: release v0.2.0"
-git tag v0.2.0
+git commit -m "chore: release v1.1.0"
+git tag v1.1.0
 git push origin main --tags
 ```
 

@@ -37,7 +37,9 @@ jobs:
       - name: Build and publish to GitHub Releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS code signing (optional — remove if you don't have a certificate)
+          # Prevent macOS build failures when no signing certificate is present
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          # macOS code signing (optional — add secrets if you have a certificate)
           # CSC_LINK: ${{ secrets.CSC_LINK }}
           # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: npm run release
