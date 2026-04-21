@@ -112,6 +112,22 @@ git push origin main --tags
 
 The `Release` workflow triggers on `v*` tags, builds on `macos-latest` and `windows-latest`, and uploads the artifacts to a new GitHub Release automatically. The `GITHUB_TOKEN` secret is available by default — no extra setup needed.
 
+### macOS — "App is damaged" or crashes after download
+
+The app is not yet code-signed. macOS quarantines files downloaded from the internet, which causes the app to crash or show an _"App is damaged and can't be opened"_ error even though the build is fine.
+
+**Fix:** Open Terminal and run this once after installing:
+
+```bash
+xattr -cr "/Applications/Quick Rewrite.app"
+```
+
+Then try opening the app again. This removes the quarantine flag that macOS added when you downloaded the file.
+
+If you installed to a different location, adjust the path accordingly (e.g. `~/Desktop/Quick\ Rewrite.app`).
+
+---
+
 ### macOS code signing (optional)
 
 Without a signing certificate, Gatekeeper will warn users when they first open the app. To sign:
