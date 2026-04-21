@@ -98,7 +98,7 @@ Targets:
 
 ## Releases
 
-Releases are built automatically by GitHub Actions whenever a version tag is pushed.
+Releases are built automatically by GitHub Actions whenever a version tag is pushed. Only user-facing installer binaries (`.dmg`, `.zip`, `.exe`) are attached — auto-updater metadata files are excluded.
 
 ### Creating a release
 

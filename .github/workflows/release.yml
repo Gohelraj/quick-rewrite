@@ -34,12 +34,29 @@ jobs:
       - name: Run checks
         run: npm run check
 
-      - name: Build and publish to GitHub Releases
+      - name: Build
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Prevent macOS build failures when no signing certificate is present
+          # Prevent build failure when no Apple signing certificate is present
           CSC_IDENTITY_AUTO_DISCOVERY: false
           # macOS code signing (optional — add secrets if you have a certificate)
           # CSC_LINK: ${{ secrets.CSC_LINK }}
           # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-        run: npm run release
+        run: npx electron-builder --publish never
+
+      - name: Upload binaries to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+
+          # Create the release if this is the first job to finish
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes \
+            2>/dev/null || true
+
+          # Upload only user-facing installers — skip .yml and .blockmap auto-updater files
+          for f in dist/*.dmg dist/*.zip dist/*.exe; do
+            [ -f "$f" ] && gh release upload "$TAG" "$f" --clobber
+          done
