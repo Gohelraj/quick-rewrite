@@ -1,38 +1,30 @@
 # Quick Rewrite
 
-Quick Rewrite is a desktop text-rewrite assistant for macOS and Windows.
+Quick Rewrite is a lightweight desktop text-rewrite assistant for macOS and Windows.
 
-It lets you select text in any app, press a global shortcut, and instantly get ready-to-copy rewrite options like:
-
-- select text in any app
-- press one global shortcut
-- see grammar-fixed and rewritten versions
-- copy the tone you want, such as casual, friendly, formal, or professional
-- run from the system tray and change settings like the shortcut and model provider
+Select text in any app, press a global shortcut, and instantly get ready-to-copy rewrite suggestions — grammar fix, polished rewrite, and four tone variants — in a single request.
 
 ## Features
 
-- global shortcut to capture selected text from other apps
-- polished popup UI with setup, rewrite, and settings screens
-- grammar fix plus multiple rewrite tones in one request
-- OpenRouter and OpenAI provider support
-- macOS setup guidance for Accessibility permission
-- lightweight in-memory caching for repeated rewrites
-
-## Demo Flow
-
-1. Select text in any app.
-2. Press `CommandOrControl + Shift + Space`.
-3. Quick Rewrite captures the selection and opens near your cursor.
-4. Generate rewrite suggestions.
-5. Copy the version you want.
+- Global shortcut captures selected text from any app
+- Auto-generates suggestions the moment your text loads
+- Grammar fix, improved rewrite, and four tones (Casual, Friendly, Formal, Professional) in one call
+- One-click copy with visual confirmation
+- OpenRouter and OpenAI provider support, configurable from Settings
+- Settings form shows only the relevant provider's fields
+- Keyboard shortcuts: `Cmd/Ctrl+Enter` to generate, `Esc` to dismiss
+- In-memory result cache (5 minutes) to avoid duplicate requests
+- macOS Accessibility guidance built into the Setup tab
+- System tray icon with quick open and quit
 
 ## How it works
 
-- On macOS, the app uses `System Events` to trigger `Cmd+C`, which requires Accessibility access.
-- On Windows, it uses `SendKeys` through PowerShell to trigger `Ctrl+C`.
-- The app restores the prior clipboard text after capture.
-- Rewrites are requested from either OpenRouter or OpenAI.
+1. Select text in any app.
+2. Press your shortcut (default: `CommandOrControl+Shift+Space`).
+3. Quick Rewrite captures the selection, opens near your cursor, and starts generating automatically.
+4. Click **Copy** next to the version you want.
+
+On macOS the app uses `System Events` to trigger `Cmd+C`, which requires Accessibility access (guided in the Setup tab). On Windows it uses `SendKeys` through PowerShell.
 
 ## Getting Started
 
@@ -42,47 +34,53 @@ It lets you select text in any app, press a global shortcut, and instantly get r
 - npm
 - macOS or Windows
 
-### Setup
+### Install and run
 
 ```bash
 npm install
 cp .env.example .env
+npm start
 ```
 
-Add your provider settings in `.env`.
+### Environment variables
 
-OpenRouter is the default:
+OpenRouter (default):
 
 ```env
 LLM_PROVIDER=openrouter
 OPENROUTER_API_KEY=your_openrouter_api_key_here
-OPENROUTER_MODEL=openai/gpt-5-mini
+OPENROUTER_MODEL=openai/gpt-4.1-mini
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_HTTP_REFERER=https://example.com
 OPENROUTER_APP_TITLE=Quick Rewrite
 ```
 
-If you want to use OpenAI directly:
+OpenAI:
 
 ```env
 LLM_PROVIDER=openai
 OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-5-mini
+OPENAI_MODEL=gpt-4.1-mini
 OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
-Do not commit `.env` or real API keys to GitHub.
+You can also configure everything from the **Settings** tab inside the app without touching `.env`.
+
+> Do not commit `.env` or real API keys to version control.
+
+## Keyboard shortcuts
+
+| Action | Shortcut |
+|---|---|
+| Capture text and open app | `CommandOrControl+Shift+Space` (configurable) |
+| Generate suggestions | `Cmd/Ctrl+Enter` |
+| Dismiss window | `Esc` |
 
 ## Local Development
 
 ```bash
-npm start
-```
-
-Run the lightweight checks:
-
-```bash
-npm run check
+npm start        # run the app
+npm run check    # syntax check all source files
 ```
 
 ## Build
@@ -91,44 +89,73 @@ npm run check
 npm run build
 ```
 
-Configured targets:
+Targets:
 
-- macOS: `dmg`, `zip`
-- Windows: `nsis`, `portable`
+| Platform | Output |
+|---|---|
+| macOS | `.dmg`, `.zip` |
+| Windows | NSIS installer, portable `.exe` |
+
+## Releases
+
+Releases are built automatically by GitHub Actions whenever a version tag is pushed.
+
+### Creating a release
+
+```bash
+# Bump the version in package.json first, then:
+git add package.json
+git commit -m "chore: release v0.2.0"
+git tag v0.2.0
+git push origin main --tags
+```
+
+The `Release` workflow triggers on `v*` tags, builds on `macos-latest` and `windows-latest`, and uploads the artifacts to a new GitHub Release automatically. The `GITHUB_TOKEN` secret is available by default — no extra setup needed.
+
+### macOS code signing (optional)
+
+Without a signing certificate, Gatekeeper will warn users when they first open the app. To sign:
+
+1. Export your Apple Developer certificate as a `.p12` file.
+2. Base64-encode it: `base64 -i cert.p12 | pbcopy`
+3. Add two repository secrets in **Settings → Secrets → Actions**:
+   - `CSC_LINK` — the base64 string
+   - `CSC_KEY_PASSWORD` — your `.p12` password
+4. Uncomment the `CSC_LINK` and `CSC_KEY_PASSWORD` lines in `.github/workflows/release.yml`.
 
 ## Project Structure
 
-```text
+```
 src/
-  main.js              Electron main process
-  preload.js           Secure renderer bridge
-  rewriteService.js    Provider requests and caching
+  main.js              Electron main process, IPC handlers, tray, shortcut
+  preload.js           Secure contextBridge for renderer
+  rewriteService.js    OpenRouter / OpenAI requests, JSON parsing, cache
   renderer/
-    index.html         UI shell
-    renderer.js        UI behavior
-    styles.css         UI styling
+    index.html         App shell and settings form
+    renderer.js        UI logic and IPC event wiring
+    styles.css         Design tokens and component styles
+.github/
+  workflows/
+    release.yml        Automated release workflow
 ```
 
 ## Notes
 
-- macOS will need Accessibility permissions because the app triggers the copy shortcut through `System Events`.
-- Windows may need permission to send keystrokes from PowerShell to the active app.
-- Linux is not wired up in this first version.
-- The shortcut now lives in Settings and is stored per user on the machine.
-- OpenRouter support uses the current OpenRouter chat completions format with optional `HTTP-Referer` and `X-OpenRouter-Title` headers.
-- API keys are currently stored in local app settings in plain text for convenience.
+- API keys are stored in local app settings in plain text. Encryption is on the roadmap.
+- Linux is not yet supported.
+- The global shortcut is user-configurable from the Settings tab.
 
 ## Roadmap
 
-- support "replace selected text" after choosing a tone
-- add tone presets like concise, persuasive, confident, and empathetic
-- show loading, retries, and token or cost controls
-- encrypt stored API keys instead of saving them in plain local settings
+- Support "replace selected text" after choosing a tone
+- Add tone presets: concise, persuasive, confident, empathetic
+- Encrypt stored API keys
+- Linux support
 
 ## Contributing
 
-Contributions are welcome. Please read [CONTRIBUTING.md](/Volumes/d/Node_Projects/rewrite-helper/CONTRIBUTING.md) before opening a PR.
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
 
 ## License
 
-MIT. See [LICENSE](/Volumes/d/Node_Projects/rewrite-helper/LICENSE).
+MIT. See [LICENSE](LICENSE).

@@ -9,7 +9,8 @@
     "start": "electron .",
     "dev": "electron .",
     "check": "node --check src/main.js && node --check src/preload.js && node --check src/rewriteService.js && node --check src/renderer/renderer.js",
-    "build": "electron-builder"
+    "build": "electron-builder",
+    "release": "electron-builder --publish always"
   },
   "keywords": [
     "electron",
@@ -29,6 +30,11 @@
       "src/**/*",
       "package.json"
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "Gohelraj",
+      "repo": "quick-rewrite"
+    },
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
