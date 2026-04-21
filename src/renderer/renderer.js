@@ -361,6 +361,14 @@ document.addEventListener("keydown", (event) => {
 
 // ── IPC event handlers ────────────────────────────────────────────────────────
 window.rewriteHelper.onSelectionLoaded(({ selectedText, shortcut, settings }) => {
+  // Reset to a clean slate every time the app opens via the shortcut
+  resultsContainer.innerHTML = "";
+  hideLoadingState();
+  resultsSummary.classList.add("isHidden");
+  emptyState.classList.remove("isHidden");
+  sourceText.value = "";
+  updateSourceMeta();
+
   if (settings) {
     populateSettingsForm(settings);
   }
@@ -389,6 +397,14 @@ window.rewriteHelper.onSelectionLoaded(({ selectedText, shortcut, settings }) =>
 });
 
 window.rewriteHelper.onSelectionError(({ message, shortcut, settings }) => {
+  // Reset to a clean slate on error too so stale results don't linger
+  resultsContainer.innerHTML = "";
+  hideLoadingState();
+  resultsSummary.classList.add("isHidden");
+  emptyState.classList.remove("isHidden");
+  sourceText.value = "";
+  updateSourceMeta();
+
   if (settings) {
     populateSettingsForm(settings);
   }
