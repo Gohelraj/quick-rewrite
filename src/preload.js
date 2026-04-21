@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld("rewriteHelper", {
   onSelectionError: (callback) => ipcRenderer.on("selection:error", (_event, payload) => callback(payload)),
   onSettingsLoaded: (callback) => ipcRenderer.on("settings:loaded", (_event, payload) => callback(payload)),
   onPermissionsLoaded: (callback) => ipcRenderer.on("permissions:loaded", (_event, payload) => callback(payload)),
+  getDefaultPrompt: () => ipcRenderer.invoke("prompt:getDefault"),
   runRewrite: (text) => ipcRenderer.invoke("rewrite:run", text),
   copyText: (text) => ipcRenderer.invoke("clipboard:write", text),
   hideWindow: () => ipcRenderer.invoke("window:hide"),

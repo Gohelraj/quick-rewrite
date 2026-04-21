@@ -4,6 +4,7 @@ const statusText = document.getElementById("statusText");
 const shortcutText = document.getElementById("shortcutText");
 const wordCountPill = document.getElementById("wordCountPill");
 const providerPill = document.getElementById("providerPill");
+const tokenPill = document.getElementById("tokenPill");
 const latencyPill = document.getElementById("latencyPill");
 const cachePill = document.getElementById("cachePill");
 const rewriteButton = document.getElementById("rewriteButton");
@@ -35,11 +36,14 @@ const cardTemplate = document.getElementById("cardTemplate");
 const openrouterBlock = document.getElementById("openrouterBlock");
 const openaiBlock = document.getElementById("openaiBlock");
 
+const resetPromptButton = document.getElementById("resetPromptButton");
+
 // ── State ────────────────────────────────────────────────────────────────────
 let currentSettings = null;
 let currentPermissions = null;
 let hasAutoOpenedSetup = false;
 let requestStartedAt = 0;
+let defaultPromptText = "";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function escapeHtml(text) {
@@ -81,6 +85,7 @@ function showLoadingState() {
   loadingState.classList.remove("isHidden");
   latencyPill.textContent = "Thinking…";
   cachePill.textContent = "Fresh";
+  tokenPill.classList.add("isHidden");
 }
 
 function hideLoadingState() {
@@ -121,6 +126,14 @@ function renderResults(payload) {
   resultsSummary.classList.remove("isHidden");
   hideLoadingState();
 
+  const tokens = payload?.meta?.tokens;
+  if (tokens) {
+    tokenPill.textContent = `${tokens.toLocaleString()} tokens`;
+    tokenPill.classList.remove("isHidden");
+  } else {
+    tokenPill.classList.add("isHidden");
+  }
+
   renderCard("Grammar Fix", payload.grammar_fixed);
   renderCard("Improved Rewrite", payload.rewritten);
 
@@ -148,6 +161,8 @@ function updateProviderSections() {
 function populateSettingsForm(settings) {
   currentSettings = settings;
   settingsForm.shortcut.value = settings.shortcut || "";
+  settingsForm.autoGenerate.checked = settings.autoGenerate !== false;
+  settingsForm.customPrompt.value = settings.customPrompt || defaultPromptText;
   settingsForm.provider.value = settings.provider || "openrouter";
   settingsForm.openrouterApiKey.value = settings.openrouterApiKey || "";
   settingsForm.openrouterModel.value = settings.openrouterModel || "";
@@ -283,6 +298,12 @@ settingsForm.addEventListener("submit", async (event) => {
   try {
     const saved = await window.rewriteHelper.saveSettings({
       shortcut: settingsForm.shortcut.value.trim(),
+      autoGenerate: settingsForm.autoGenerate.checked,
+      // Store empty string when user saves the default prompt unchanged,
+      // so future built-in prompt updates still apply automatically.
+      customPrompt: settingsForm.customPrompt.value.trim() === defaultPromptText
+        ? ""
+        : settingsForm.customPrompt.value.trim(),
       provider: settingsForm.provider.value,
       openrouterApiKey: settingsForm.openrouterApiKey.value.trim(),
       openrouterModel: settingsForm.openrouterModel.value.trim(),
@@ -337,6 +358,10 @@ openPermissionSettingsButton.addEventListener("click", async () => {
   }
 });
 
+resetPromptButton.addEventListener("click", () => {
+  settingsForm.customPrompt.value = defaultPromptText;
+});
+
 sourceText.addEventListener("input", updateSourceMeta);
 
 // Keyboard shortcuts
@@ -383,10 +408,10 @@ window.rewriteHelper.onSelectionLoaded(({ selectedText, shortcut, settings }) =>
     sourceText.focus();
     sourceText.select();
 
-    // Auto-generate immediately if an API key is already configured
-    if (isProviderConfigured()) {
+    // Auto-generate immediately if an API key is configured and the setting is on
+    if (isProviderConfigured() && currentSettings?.autoGenerate !== false) {
       runRewrite();
-    } else {
+    } else if (!isProviderConfigured()) {
       const providerName = currentSettings?.provider === "openai" ? "OpenAI" : "OpenRouter";
       setStatus(`Add a ${providerName} API key in Settings to start generating.`, true);
     }
@@ -427,6 +452,15 @@ window.rewriteHelper.onPermissionsLoaded((status) => {
 });
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
+// Fetch the default prompt first so the textarea can be pre-filled immediately
+window.rewriteHelper.getDefaultPrompt().then((prompt) => {
+  defaultPromptText = prompt || "";
+  // If the prompt textarea is still empty (settings loaded before this resolved), fill it now
+  if (!settingsForm.customPrompt.value) {
+    settingsForm.customPrompt.value = defaultPromptText;
+  }
+});
+
 window.rewriteHelper.getSettings().then((settings) => {
   if (settings) {
     populateSettingsForm(settings);

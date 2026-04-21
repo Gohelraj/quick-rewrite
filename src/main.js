@@ -19,7 +19,7 @@ const {
 
 require("dotenv").config();
 
-const { rewriteText } = require("./rewriteService");
+const { rewriteText, SYSTEM_PROMPT } = require("./rewriteService");
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_SHORTCUT = "CommandOrControl+Shift+Space";
@@ -37,6 +37,8 @@ nativeTheme.themeSource = "light";
 function getDefaultSettings() {
   return {
     shortcut: DEFAULT_SHORTCUT,
+    autoGenerate: true,
+    customPrompt: "",
     provider: process.env.LLM_PROVIDER || "openrouter",
     openaiApiKey: process.env.OPENAI_API_KEY || "",
     openaiModel: process.env.OPENAI_MODEL || "gpt-4.1-mini",
@@ -331,6 +333,8 @@ function createTray() {
     broadcastPermissionStatus();
   });
 }
+
+ipcMain.handle("prompt:getDefault", () => SYSTEM_PROMPT);
 
 ipcMain.handle("rewrite:run", async (_event, inputText) => {
   if (!inputText || !inputText.trim()) {

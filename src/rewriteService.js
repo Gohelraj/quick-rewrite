@@ -73,6 +73,7 @@ function buildCacheKey(inputText, settings) {
     provider,
     model,
     inputText: inputText.trim(),
+    customPrompt: settings.customPrompt?.trim() || "",
     promptVersion: 2,
   });
 }
@@ -360,11 +361,30 @@ function normalizeRewritePayload(value) {
   };
 }
 
+function extractUsage(payload, provider) {
+  const usage = payload?.usage;
+
+  if (!usage) {
+    return null;
+  }
+
+  if (provider === "openai") {
+    const input = usage.input_tokens ?? usage.prompt_tokens ?? 0;
+    const output = usage.output_tokens ?? usage.completion_tokens ?? 0;
+    return { inputTokens: input, outputTokens: output, totalTokens: input + output };
+  }
+
+  const input = usage.prompt_tokens ?? 0;
+  const output = usage.completion_tokens ?? 0;
+  return { inputTokens: input, outputTokens: output, totalTokens: usage.total_tokens ?? input + output };
+}
+
+
 async function callOpenAI(inputText, settings, options = {}) {
   const apiKey = settings.openaiApiKey || process.env.OPENAI_API_KEY;
   const model = settings.openaiModel || process.env.OPENAI_MODEL || "gpt-4.1-mini";
   const baseUrl = settings.openaiBaseUrl || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
-  const instructions = options.instructions || SYSTEM_PROMPT;
+  const instructions = options.instructions || settings.customPrompt?.trim() || SYSTEM_PROMPT;
   const textFormat = options.textFormat || {
     type: "json_schema",
     name: "rewrite_result",
@@ -400,7 +420,7 @@ async function callOpenAI(inputText, settings, options = {}) {
   }
 
   const payload = await response.json();
-  return extractOpenAIOutputText(payload);
+  return { text: extractOpenAIOutputText(payload), usage: extractUsage(payload, "openai") };
 }
 
 async function repairMalformedJson(rawOutputText, settings) {
@@ -418,7 +438,7 @@ ${rawOutputText}
 
   const repairedText =
     provider === "openai"
-      ? await callOpenAI(repairPrompt, settings, {
+      ? (await callOpenAI(repairPrompt, settings, {
           instructions: repairSystemPrompt,
           textFormat: {
             type: "json_schema",
@@ -426,13 +446,13 @@ ${rawOutputText}
             strict: true,
             schema: OUTPUT_SCHEMA,
           },
-        })
-      : await callOpenRouter(repairPrompt, settings, {
+        })).text
+      : (await callOpenRouter(repairPrompt, settings, {
           systemPrompt: repairSystemPrompt,
           responseFormat: {
             type: "json_object",
           },
-        });
+        })).text;
 
   return parseJsonCandidate(repairedText);
 }
@@ -445,7 +465,7 @@ async function callOpenRouter(inputText, settings, options = {}) {
   const httpReferer =
     settings.openrouterHttpReferer || process.env.OPENROUTER_HTTP_REFERER || "https://example.com";
   const appTitle = settings.openrouterAppTitle || process.env.OPENROUTER_APP_TITLE || "Quick Rewrite";
-  const systemPrompt = options.systemPrompt || SYSTEM_PROMPT;
+  const systemPrompt = options.systemPrompt || settings.customPrompt?.trim() || SYSTEM_PROMPT;
   const responseFormat = options.responseFormat || {
     type: "json_object",
   };
@@ -486,7 +506,7 @@ async function callOpenRouter(inputText, settings, options = {}) {
   }
 
   const payload = await response.json();
-  return extractOpenRouterOutputText(payload);
+  return { text: extractOpenRouterOutputText(payload), usage: extractUsage(payload, "openrouter") };
 }
 
 async function rewriteText(inputText, settings = {}) {
@@ -504,7 +524,7 @@ async function rewriteText(inputText, settings = {}) {
   }
 
   const provider = settings.provider || process.env.LLM_PROVIDER || "openrouter";
-  const outputText =
+  const { text: outputText, usage } =
     provider === "openai"
       ? await callOpenAI(inputText, settings)
       : await callOpenRouter(inputText, settings);
@@ -527,6 +547,7 @@ async function rewriteText(inputText, settings = {}) {
     meta: {
       cached: false,
       provider,
+      tokens: usage?.totalTokens ?? null,
     },
   };
 
@@ -536,4 +557,5 @@ async function rewriteText(inputText, settings = {}) {
 
 module.exports = {
   rewriteText,
+  SYSTEM_PROMPT,
 };

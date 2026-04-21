@@ -442,6 +442,111 @@ textarea::placeholder {
   animation: shimmer 1.4s ease infinite;
 }
 
+/* ─── Toggle switch ─── */
+.toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 150ms;
+}
+
+.toggleRow:hover {
+  border-color: rgba(155, 68, 35, 0.25);
+}
+
+.toggleInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.toggleTitle {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.toggleDesc {
+  display: block;
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.4;
+}
+
+.toggleSwitch {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.toggleInput {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.toggleTrack {
+  display: block;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: rgba(48, 28, 8, 0.16);
+  position: relative;
+  transition: background 200ms ease;
+}
+
+.toggleTrack::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 200ms ease;
+}
+
+.toggleInput:checked + .toggleTrack {
+  background: var(--accent);
+}
+
+.toggleInput:checked + .toggleTrack::after {
+  transform: translateX(16px);
+}
+
+/* ─── Custom prompt textarea ─── */
+.promptActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+
+.promptActions .fieldLabel {
+  margin-bottom: 0;
+}
+
+.promptInput {
+  min-height: 130px;
+  resize: vertical;
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 /* ─── Settings form ─── */
 .settingsForm {
   display: flex;

@@ -48,6 +48,7 @@
           <div id="resultsSummary" class="resultsBar isHidden">
             <span class="resultsLabel">Results</span>
             <div class="inputMeta">
+              <span id="tokenPill" class="chip isHidden"></span>
               <span id="latencyPill" class="chip">—</span>
               <span id="cachePill" class="chip">Live</span>
             </div>
@@ -76,6 +77,22 @@
             <label class="fieldLabel" for="shortcutInput">Global shortcut</label>
             <input id="shortcutInput" name="shortcut" class="textInput" placeholder="CommandOrControl+Shift+Space" />
             <p class="fieldHint">e.g. CommandOrControl+Shift+Space · Alt+Space · CommandOrControl+Alt+R</p>
+          </div>
+
+          <div class="formDivider"></div>
+
+          <div class="formGroup">
+            <p class="formGroupLabel">Behavior</p>
+            <label class="toggleRow" for="autoGenerateToggle">
+              <div class="toggleInfo">
+                <span class="toggleTitle">Auto-generate on shortcut</span>
+                <span class="toggleDesc">Start rewriting immediately when text is captured — no extra click needed</span>
+              </div>
+              <div class="toggleSwitch">
+                <input type="checkbox" id="autoGenerateToggle" name="autoGenerate" class="toggleInput" />
+                <span class="toggleTrack"></span>
+              </div>
+            </label>
           </div>
 
           <div class="formDivider"></div>
@@ -121,6 +138,23 @@
 
           <div class="formFooter">
             <button id="saveSettingsButton" type="submit" class="primaryButton">Save Settings</button>
+          </div>
+
+          <div class="formDivider"></div>
+
+          <div class="formGroup">
+            <p class="formGroupLabel">Custom Prompt</p>
+            <div class="promptActions">
+              <label class="fieldLabel" for="customPromptTextarea">System prompt</label>
+              <button type="button" id="resetPromptButton" class="ghostButton compactButton">Reset to default</button>
+            </div>
+            <textarea
+              id="customPromptTextarea"
+              name="customPrompt"
+              class="textInput promptInput"
+              placeholder="Loading default prompt…"
+            ></textarea>
+            <p class="fieldHint">Override the default AI instructions. Useful for changing the tone focus, language, or writing style. Leave blank to restore the default behavior.</p>
           </div>
 
         </form>
