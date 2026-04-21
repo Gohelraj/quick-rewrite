@@ -1,0 +1,23 @@
+node_modules/
+dist/
+out/
+.env
+.env.local
+.DS_Store
+*.log
+*.tmp
+Thumbs.db
+
+# Electron builder
+*.blockmap
+builder-debug.yml
+builder-effective-config.yaml
+
+# Editors and OS
+.idea/
+.vscode/
+coverage/
+release/
+
+# Local scratch files
+Untitled

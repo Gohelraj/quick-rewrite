@@ -1,0 +1,499 @@
+:root {
+  color-scheme: light;
+  --bg: #f7f3ec;
+  --panel: rgba(255, 252, 248, 0.92);
+  --panel-border: rgba(77, 63, 41, 0.12);
+  --text: #241b14;
+  --muted: #736252;
+  --accent: #c85d32;
+  --accent-strong: #9e3f1d;
+  --accent-soft: rgba(200, 93, 50, 0.1);
+  --success: #1b6a52;
+  --danger: #a12727;
+  --shadow: 0 26px 70px rgba(62, 34, 8, 0.14);
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top right, rgba(245, 141, 97, 0.36), transparent 24%),
+    radial-gradient(circle at top left, rgba(255, 231, 173, 0.5), transparent 28%),
+    linear-gradient(180deg, #fbf7f1 0%, #f2e6d8 100%);
+  color: var(--text);
+}
+
+.shell {
+  min-height: 100vh;
+  padding: 20px;
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.heroActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+h1 {
+  margin: 0;
+  font-size: 32px;
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+}
+
+.panel,
+.resultCard {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.panel {
+  padding: 18px;
+}
+
+.composerPanel {
+  position: relative;
+  overflow: hidden;
+}
+
+.composerPanel::after {
+  content: "";
+  position: absolute;
+  inset: auto -40px -60px auto;
+  width: 160px;
+  height: 160px;
+  background: radial-gradient(circle, rgba(200, 93, 50, 0.16), transparent 62%);
+  pointer-events: none;
+}
+
+.composerTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.metaPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.metaPill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(62, 38, 17, 0.07);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.metaPillAccent {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.label {
+  display: inline-block;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+textarea {
+  width: 100%;
+  min-height: 168px;
+  resize: vertical;
+  border: 1px solid rgba(84, 60, 31, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 16px 18px;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text);
+  outline: none;
+}
+
+textarea:focus {
+  border-color: rgba(162, 75, 42, 0.45);
+  box-shadow: 0 0 0 4px rgba(162, 75, 42, 0.12);
+}
+
+.hintRow {
+  margin-top: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hintText {
+  text-align: right;
+}
+
+.isError {
+  color: var(--danger);
+}
+
+.actionBar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 16px 0 18px;
+}
+
+.actionPrimary {
+  flex: 1;
+}
+
+.tabPanel.isHidden {
+  display: none;
+}
+
+.settingsGrid {
+  display: grid;
+  gap: 14px;
+}
+
+.permissionPanel {
+  display: grid;
+  gap: 14px;
+}
+
+.permissionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.permissionCard {
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(104, 78, 47, 0.12);
+}
+
+.permissionRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.permissionTitle {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.permissionDescription,
+.permissionMeta {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+  font-size: 13px;
+}
+
+.permissionActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  min-width: 88px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(119, 100, 78, 0.14);
+  color: var(--muted);
+}
+
+.statusPill.isReady {
+  background: rgba(27, 106, 82, 0.14);
+  color: var(--success);
+}
+
+.statusPill.isWarn {
+  background: rgba(161, 39, 39, 0.12);
+  color: var(--danger);
+}
+
+.statusPill.isMuted {
+  background: rgba(119, 100, 78, 0.14);
+  color: var(--muted);
+}
+
+.compactButton {
+  width: auto;
+  padding-inline: 16px;
+}
+
+.sectionTitle {
+  margin: 0 0 14px;
+  font-size: 18px;
+}
+
+.sectionTight {
+  margin-bottom: 0;
+}
+
+.textInput {
+  width: 100%;
+  border: 1px solid rgba(84, 60, 31, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 12px 14px;
+  font: inherit;
+  color: var(--text);
+  outline: none;
+  margin-bottom: 12px;
+}
+
+.textInput:focus {
+  border-color: rgba(162, 75, 42, 0.45);
+  box-shadow: 0 0 0 4px rgba(162, 75, 42, 0.12);
+}
+
+.fieldHint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.primaryButton,
+.ghostButton,
+.copyButton {
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ghostButton.isActive {
+  background: rgba(162, 75, 42, 0.18);
+}
+
+.primaryButton {
+  width: 100%;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+  color: #fff7f3;
+  font-weight: 700;
+  box-shadow: 0 14px 28px rgba(162, 75, 42, 0.22);
+}
+
+.primaryButton:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.ghostButton,
+.copyButton {
+  padding: 10px 14px;
+  background: rgba(162, 75, 42, 0.08);
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.results {
+  display: grid;
+  gap: 14px;
+}
+
+.resultsSummary {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.emptyState {
+  padding: 22px;
+  border-radius: 22px;
+  border: 1px dashed rgba(104, 78, 47, 0.25);
+  color: var(--muted);
+  background:
+    linear-gradient(180deg, rgba(255, 250, 242, 0.8), rgba(255, 248, 238, 0.6)),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(200, 93, 50, 0.04),
+      rgba(200, 93, 50, 0.04) 10px,
+      transparent 10px,
+      transparent 20px
+    );
+}
+
+.loadingGrid {
+  display: grid;
+  gap: 14px;
+}
+
+.loadingCard {
+  height: 132px;
+  border-radius: 22px;
+  border: 1px solid rgba(104, 78, 47, 0.12);
+  background:
+    linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.65) 0%,
+      rgba(255, 255, 255, 0.95) 35%,
+      rgba(255, 255, 255, 0.65) 70%
+    );
+  background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+
+.resultCard {
+  padding: 18px;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+}
+
+.resultCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 30px 80px rgba(62, 34, 8, 0.18);
+  border-color: rgba(200, 93, 50, 0.18);
+}
+
+.resultHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.resultHeading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.resultBadge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.resultTitle {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.resultBody {
+  margin: 14px 0 0;
+  line-height: 1.55;
+  white-space: normal;
+  font-size: 15px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.isHidden {
+  display: none !important;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .shell {
+    padding: 14px;
+  }
+
+  h1 {
+    font-size: 24px;
+  }
+
+  .hintRow,
+  .resultHeader,
+  .hero,
+  .heroActions,
+  .composerTop,
+  .metaPills,
+  .actionBar,
+  .resultsSummary,
+  .permissionHeader,
+  .permissionRow,
+  .permissionActions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .actionPrimary,
+  .compactButton {
+    width: 100%;
+  }
+
+  .hintText {
+    text-align: left;
+  }
+}

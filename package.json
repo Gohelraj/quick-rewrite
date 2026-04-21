@@ -1,0 +1,53 @@
+{
+  "name": "quick-rewrite",
+  "version": "0.1.0",
+  "description": "Cross-platform desktop text rewrite assistant with a global shortcut.",
+  "license": "MIT",
+  "main": "src/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/rewriteService.js && node --check src/renderer/renderer.js",
+    "build": "electron-builder"
+  },
+  "keywords": [
+    "electron",
+    "desktop",
+    "rewrite",
+    "openrouter",
+    "openai",
+    "productivity"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "build": {
+    "appId": "com.quickrewrite.app",
+    "productName": "Quick Rewrite",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    }
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "electron": "^36.2.0",
+    "electron-builder": "^24.13.3"
+  }
+}

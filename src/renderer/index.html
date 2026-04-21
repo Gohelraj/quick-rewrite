@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quick Rewrite</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Quick Rewrite</p>
+          <h1>Instant rewrite from any app</h1>
+        </div>
+        <div class="heroActions">
+          <button id="showRewriteTab" class="ghostButton isActive" aria-label="Show rewrite">Rewrite</button>
+          <button id="showPermissionsTab" class="ghostButton" aria-label="Show permissions">Setup</button>
+          <button id="showSettingsTab" class="ghostButton" aria-label="Show settings">Settings</button>
+          <button id="closeButton" class="ghostButton" aria-label="Close">Close</button>
+        </div>
+      </header>
+
+      <section id="rewritePanel" class="tabPanel">
+        <section class="panel composerPanel">
+          <div class="composerTop">
+            <div>
+              <p class="eyebrow">Capture</p>
+              <h2 class="sectionTitle sectionTight">Selected text</h2>
+            </div>
+            <div class="metaPills">
+              <span id="wordCountPill" class="metaPill">0 words</span>
+              <span id="providerPill" class="metaPill">Provider</span>
+              <span id="shortcutText" class="metaPill metaPillAccent"></span>
+            </div>
+          </div>
+
+          <label class="srOnly" for="sourceText">Selected text</label>
+          <textarea id="sourceText" placeholder="Select text anywhere, then press the shortcut."></textarea>
+
+          <div class="hintRow">
+            <span id="statusText">Waiting for text selection.</span>
+            <span class="hintText">Grammar fix, polished rewrite, and four tone options in one run.</span>
+          </div>
+        </section>
+
+        <section class="actionBar">
+          <button id="rewriteButton" class="primaryButton actionPrimary">Generate Suggestions</button>
+          <button id="clearButton" class="ghostButton" type="button">Clear</button>
+        </section>
+
+        <section class="results">
+          <div id="resultsSummary" class="resultsSummary isHidden">
+            <div>
+              <p class="eyebrow">Results</p>
+              <h2 class="sectionTitle sectionTight">Pick the version that fits</h2>
+            </div>
+            <div class="metaPills">
+              <span id="latencyPill" class="metaPill">Ready</span>
+              <span id="cachePill" class="metaPill">Live</span>
+            </div>
+          </div>
+
+          <div id="loadingState" class="loadingGrid isHidden" aria-hidden="true">
+            <div class="loadingCard"></div>
+            <div class="loadingCard"></div>
+            <div class="loadingCard"></div>
+          </div>
+
+          <div id="emptyState" class="emptyState">
+            Select text, trigger the shortcut, and generate a set of ready-to-copy rewrites.
+          </div>
+          <div id="resultsContainer"></div>
+        </section>
+      </section>
+
+      <section id="settingsPanel" class="tabPanel isHidden">
+        <form id="settingsForm" class="settingsGrid">
+          <section class="panel">
+            <h2 class="sectionTitle">Shortcut</h2>
+            <label class="label" for="shortcutInput">Global shortcut</label>
+            <input id="shortcutInput" name="shortcut" class="textInput" placeholder="CommandOrControl+Shift+Space" />
+            <p class="fieldHint">Examples: `CommandOrControl+Shift+Space`, `Alt+Space`, `CommandOrControl+Alt+R`</p>
+          </section>
+
+          <section class="panel">
+            <h2 class="sectionTitle">Provider</h2>
+            <label class="label" for="providerSelect">LLM provider</label>
+            <select id="providerSelect" name="provider" class="textInput">
+              <option value="openrouter">OpenRouter</option>
+              <option value="openai">OpenAI</option>
+            </select>
+          </section>
+
+          <section class="panel">
+            <h2 class="sectionTitle">OpenRouter</h2>
+            <label class="label" for="openrouterApiKey">API key</label>
+            <input id="openrouterApiKey" name="openrouterApiKey" class="textInput" type="password" />
+            <label class="label" for="openrouterModel">Model</label>
+            <input id="openrouterModel" name="openrouterModel" class="textInput" placeholder="openai/gpt-5-mini" />
+            <label class="label" for="openrouterBaseUrl">Base URL</label>
+            <input id="openrouterBaseUrl" name="openrouterBaseUrl" class="textInput" />
+            <label class="label" for="openrouterHttpReferer">HTTP Referer</label>
+            <input id="openrouterHttpReferer" name="openrouterHttpReferer" class="textInput" />
+            <label class="label" for="openrouterAppTitle">App title</label>
+            <input id="openrouterAppTitle" name="openrouterAppTitle" class="textInput" />
+          </section>
+
+          <section class="panel">
+            <h2 class="sectionTitle">OpenAI</h2>
+            <label class="label" for="openaiApiKey">API key</label>
+            <input id="openaiApiKey" name="openaiApiKey" class="textInput" type="password" />
+            <label class="label" for="openaiModel">Model</label>
+            <input id="openaiModel" name="openaiModel" class="textInput" placeholder="gpt-5-mini" />
+            <label class="label" for="openaiBaseUrl">Base URL</label>
+            <input id="openaiBaseUrl" name="openaiBaseUrl" class="textInput" />
+          </section>
+
+          <section class="actions">
+            <button id="saveSettingsButton" type="submit" class="primaryButton">Save Settings</button>
+          </section>
+        </form>
+      </section>
+
+      <section id="permissionsPanel" class="tabPanel isHidden">
+        <section class="panel permissionPanel">
+          <div class="permissionHeader">
+            <div>
+              <p class="eyebrow">Setup</p>
+              <h2 class="sectionTitle">Permissions & Readiness</h2>
+            </div>
+            <button id="refreshPermissionsButton" class="ghostButton" type="button">Refresh</button>
+          </div>
+
+          <div class="permissionCard">
+            <div class="permissionRow">
+              <div>
+                <p class="permissionTitle" id="accessibilityTitle">Accessibility</p>
+                <p class="permissionDescription" id="accessibilityDescription"></p>
+              </div>
+              <span id="accessibilityStatus" class="statusPill">Checking</span>
+            </div>
+            <div class="permissionActions">
+              <button id="requestAccessibilityButton" class="primaryButton compactButton" type="button">
+                Prompt For Access
+              </button>
+              <button id="openPermissionSettingsButton" class="ghostButton" type="button">
+                Open System Settings
+              </button>
+            </div>
+          </div>
+
+          <div class="permissionCard">
+            <div class="permissionRow">
+              <div>
+                <p class="permissionTitle">Global shortcut</p>
+                <p class="permissionDescription">The app needs the shortcut to register successfully so it can open on demand.</p>
+              </div>
+              <span id="shortcutStatus" class="statusPill">Checking</span>
+            </div>
+            <p id="shortcutDetail" class="permissionMeta"></p>
+          </div>
+
+          <div class="permissionCard">
+            <div class="permissionRow">
+              <div>
+                <p class="permissionTitle">Provider configuration</p>
+                <p class="permissionDescription">Your selected AI provider needs a valid API key before rewrites can run.</p>
+              </div>
+              <span id="providerStatus" class="statusPill">Checking</span>
+            </div>
+            <p id="providerDetail" class="permissionMeta"></p>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <template id="cardTemplate">
+      <article class="resultCard">
+        <div class="resultHeader">
+          <div class="resultHeading">
+            <span class="resultBadge"></span>
+            <h2 class="resultTitle"></h2>
+          </div>
+          <button class="copyButton" type="button">Copy</button>
+        </div>
+        <p class="resultBody"></p>
+      </article>
+    </template>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>
