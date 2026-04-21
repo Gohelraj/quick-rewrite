@@ -50,13 +50,15 @@ jobs:
         run: |
           TAG="${GITHUB_REF_NAME}"
 
-          # Create the release if this is the first job to finish
+          # Create the release if this is the first job to finish (the other may beat us to it)
           gh release create "$TAG" \
             --title "$TAG" \
             --generate-notes \
             2>/dev/null || true
 
-          # Upload only user-facing installers — skip .yml and .blockmap auto-updater files
+          # nullglob: unmatched globs expand to nothing so the loop is skipped safely
+          # (avoids exit-code 1 from [ -f ] on platforms missing .dmg/.exe etc.)
+          shopt -s nullglob
           for f in dist/*.dmg dist/*.zip dist/*.exe; do
-            [ -f "$f" ] && gh release upload "$TAG" "$f" --clobber
+            gh release upload "$TAG" "$f" --clobber
           done
