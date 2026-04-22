@@ -13,9 +13,18 @@ const closeButton = document.getElementById("closeButton");
 const showRewriteTab = document.getElementById("showRewriteTab");
 const showPermissionsTab = document.getElementById("showPermissionsTab");
 const showSettingsTab = document.getElementById("showSettingsTab");
+const showHistoryTab = document.getElementById("showHistoryTab");
 const rewritePanel = document.getElementById("rewritePanel");
 const permissionsPanel = document.getElementById("permissionsPanel");
 const settingsPanel = document.getElementById("settingsPanel");
+const historyPanel = document.getElementById("historyPanel");
+const historyList = document.getElementById("historyList");
+const historyEmpty = document.getElementById("historyEmpty");
+const clearHistoryButton = document.getElementById("clearHistoryButton");
+const testOpenRouterButton = document.getElementById("testOpenRouterButton");
+const testOpenRouterStatus = document.getElementById("testOpenRouterStatus");
+const testOpenAIButton = document.getElementById("testOpenAIButton");
+const testOpenAIStatus = document.getElementById("testOpenAIStatus");
 const settingsForm = document.getElementById("settingsForm");
 const saveSettingsButton = document.getElementById("saveSettingsButton");
 const refreshPermissionsButton = document.getElementById("refreshPermissionsButton");
@@ -45,6 +54,7 @@ let hasAutoOpenedSetup = false;
 let requestStartedAt = 0;
 let defaultPromptText = "";
 let canReplace = false;
+let rewriteHistory = [];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function escapeHtml(text) {
@@ -164,9 +174,70 @@ function showTab(name) {
   rewritePanel.classList.toggle("isHidden", name !== "rewrite");
   permissionsPanel.classList.toggle("isHidden", name !== "permissions");
   settingsPanel.classList.toggle("isHidden", name !== "settings");
+  historyPanel.classList.toggle("isHidden", name !== "history");
   showRewriteTab.classList.toggle("isActive", name === "rewrite");
   showPermissionsTab.classList.toggle("isActive", name === "permissions");
   showSettingsTab.classList.toggle("isActive", name === "settings");
+  showHistoryTab.classList.toggle("isActive", name === "history");
+  if (name === "history") renderHistoryList();
+}
+
+// ── History ───────────────────────────────────────────────────────────────────
+function relativeTime(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 60000) return "Just now";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return `${Math.floor(diff / 86400000)}d ago`;
+}
+
+function pushHistory(inputText, cards) {
+  rewriteHistory.unshift({ id: Date.now(), timestamp: Date.now(), inputText, cards });
+  if (rewriteHistory.length > 50) rewriteHistory.pop();
+}
+
+function loadFromHistory(entry) {
+  canReplace = false;
+  sourceText.value = entry.inputText;
+  updateSourceMeta();
+  resultsContainer.innerHTML = "";
+  resultsSummary.classList.remove("isHidden");
+  hideLoadingState();
+  emptyState.classList.add("isHidden");
+  tokenPill.classList.add("isHidden");
+  latencyPill.textContent = "History";
+  cachePill.textContent = "Restored";
+  for (const card of entry.cards) {
+    renderCard(card.label, card.text);
+  }
+  setStatus("Loaded from history.");
+  showTab("rewrite");
+}
+
+function renderHistoryList() {
+  if (rewriteHistory.length === 0) {
+    historyEmpty.classList.remove("isHidden");
+    historyList.classList.add("isHidden");
+    return;
+  }
+  historyEmpty.classList.add("isHidden");
+  historyList.classList.remove("isHidden");
+  historyList.innerHTML = "";
+  for (const entry of rewriteHistory) {
+    const item = document.createElement("div");
+    item.className = "historyItem";
+    const preview = entry.inputText.length > 60
+      ? escapeHtml(entry.inputText.slice(0, 60)) + "…"
+      : escapeHtml(entry.inputText);
+    item.innerHTML = `
+      <span class="historyTime">${relativeTime(entry.timestamp)}</span>
+      <span class="historyPreview">${preview}</span>
+      <span class="historyCount">${entry.cards.length} cards</span>
+      <button class="ghostButton compactButton historyLoadBtn" type="button">Load</button>
+    `;
+    item.querySelector(".historyLoadBtn").addEventListener("click", () => loadFromHistory(entry));
+    historyList.appendChild(item);
+  }
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
@@ -266,11 +337,13 @@ async function runRewrite() {
   setStatus("Creating rewrite suggestions…");
 
   let firstCardReceived = false;
+  const collectedCards = [];
   const cleanupCardListener = window.rewriteHelper.onRewriteCard((card) => {
     if (!firstCardReceived) {
       firstCardReceived = true;
       hideLoadingState();
     }
+    collectedCards.push(card);
     renderCard(card.label, card.text);
   });
 
@@ -280,6 +353,7 @@ async function runRewrite() {
     latencyPill.textContent = `${(elapsedMs / 1000).toFixed(elapsedMs >= 10000 ? 0 : 1)}s`;
     cachePill.textContent = result?.meta?.cached ? "Cached" : "Fresh";
     setStatus(result?.meta?.cached ? "Suggestions loaded from cache." : "Suggestions ready.");
+    if (collectedCards.length > 0) pushHistory(text, collectedCards);
     const tokens = result?.meta?.tokens;
     if (tokens) {
       tokenPill.textContent = `${tokens.toLocaleString()} tokens`;
@@ -319,6 +393,43 @@ closeButton.addEventListener("click", async () => {
 showRewriteTab.addEventListener("click", () => showTab("rewrite"));
 showPermissionsTab.addEventListener("click", () => showTab("permissions"));
 showSettingsTab.addEventListener("click", () => showTab("settings"));
+showHistoryTab.addEventListener("click", () => showTab("history"));
+
+clearHistoryButton.addEventListener("click", () => {
+  rewriteHistory = [];
+  renderHistoryList();
+});
+
+async function testConnection(provider, statusEl, buttonEl) {
+  buttonEl.disabled = true;
+  buttonEl.textContent = "Testing…";
+  statusEl.textContent = "";
+  statusEl.className = "testStatus";
+  try {
+    await window.rewriteHelper.testProvider({
+      provider,
+      openaiApiKey: settingsForm.openaiApiKey.value.trim(),
+      openaiBaseUrl: settingsForm.openaiBaseUrl.value.trim() || undefined,
+      openrouterApiKey: settingsForm.openrouterApiKey.value.trim(),
+      openrouterBaseUrl: settingsForm.openrouterBaseUrl.value.trim() || undefined,
+    });
+    statusEl.textContent = "✓ Connected";
+    statusEl.classList.add("testOk");
+  } catch (error) {
+    statusEl.textContent = `✕ ${error.message}`;
+    statusEl.classList.add("testFail");
+  } finally {
+    buttonEl.disabled = false;
+    buttonEl.textContent = "Test Connection";
+  }
+}
+
+testOpenRouterButton.addEventListener("click", () =>
+  testConnection("openrouter", testOpenRouterStatus, testOpenRouterButton)
+);
+testOpenAIButton.addEventListener("click", () =>
+  testConnection("openai", testOpenAIStatus, testOpenAIButton)
+);
 
 // Show only the active provider's settings fields
 settingsForm.provider.addEventListener("change", updateProviderSections);

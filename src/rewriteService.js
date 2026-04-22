@@ -839,8 +839,39 @@ async function rewriteText(inputText, settings = {}) {
   return result;
 }
 
+async function testProviderConnection(settings) {
+  const provider = settings.provider || "openrouter";
+
+  if (provider === "openai") {
+    const apiKey = settings.openaiApiKey;
+    const baseUrl = settings.openaiBaseUrl || "https://api.openai.com/v1";
+    if (!apiKey) throw new Error("No API key configured.");
+    const response = await fetch(`${baseUrl}/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`${response.status} ${body.slice(0, 160)}`);
+    }
+    return { ok: true };
+  }
+
+  const apiKey = settings.openrouterApiKey;
+  const baseUrl = settings.openrouterBaseUrl || "https://openrouter.ai/api/v1";
+  if (!apiKey) throw new Error("No API key configured.");
+  const response = await fetch(`${baseUrl}/models`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`${response.status} ${body.slice(0, 160)}`);
+  }
+  return { ok: true };
+}
+
 module.exports = {
   rewriteText,
   streamRewriteText,
+  testProviderConnection,
   SYSTEM_PROMPT,
 };
