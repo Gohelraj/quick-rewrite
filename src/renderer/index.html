@@ -16,6 +16,7 @@
           <button id="showRewriteTab" class="segTab isActive">Rewrite</button>
           <button id="showPermissionsTab" class="segTab">Setup</button>
           <button id="showSettingsTab" class="segTab">Settings</button>
+          <button id="showHistoryTab" class="segTab">History</button>
         </div>
         <button id="closeButton" class="dismissBtn" aria-label="Close">✕</button>
       </nav>
@@ -112,6 +113,10 @@
               <p class="formGroupLabel">OpenRouter</p>
               <label class="fieldLabel" for="openrouterApiKey">API key</label>
               <input id="openrouterApiKey" name="openrouterApiKey" class="textInput" type="password" placeholder="sk-or-…" />
+              <div class="testRow">
+                <button type="button" id="testOpenRouterButton" class="ghostButton compactButton">Test Connection</button>
+                <span id="testOpenRouterStatus" class="testStatus"></span>
+              </div>
               <label class="fieldLabel" for="openrouterModel">Model</label>
               <input id="openrouterModel" name="openrouterModel" class="textInput" placeholder="openai/gpt-4.1-mini" />
               <label class="fieldLabel" for="openrouterBaseUrl">Base URL</label>
@@ -129,6 +134,10 @@
               <p class="formGroupLabel">OpenAI</p>
               <label class="fieldLabel" for="openaiApiKey">API key</label>
               <input id="openaiApiKey" name="openaiApiKey" class="textInput" type="password" placeholder="sk-…" />
+              <div class="testRow">
+                <button type="button" id="testOpenAIButton" class="ghostButton compactButton">Test Connection</button>
+                <span id="testOpenAIStatus" class="testStatus"></span>
+              </div>
               <label class="fieldLabel" for="openaiModel">Model</label>
               <input id="openaiModel" name="openaiModel" class="textInput" placeholder="gpt-4.1-mini" />
               <label class="fieldLabel" for="openaiBaseUrl">Base URL</label>
@@ -210,6 +219,23 @@
         </div>
 
       </section>
+      <!-- ══ History tab ══ -->
+      <section id="historyPanel" class="tabPanel isHidden">
+        <div class="setupHead">
+          <div>
+            <h2 class="setupTitle">Rewrite History</h2>
+            <p class="setupSub">Past rewrites from this session. Click any entry to restore it.</p>
+          </div>
+          <button id="clearHistoryButton" class="ghostButton compactButton" type="button">Clear</button>
+        </div>
+
+        <div id="historyEmpty" class="emptyState">
+          No history yet. Generate some rewrites and they'll appear here.
+        </div>
+
+        <div id="historyList" class="historyList isHidden"></div>
+      </section>
+
     </div><!-- /.shell -->
 
     <template id="cardTemplate">

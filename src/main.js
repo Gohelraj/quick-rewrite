@@ -19,7 +19,7 @@ const {
 
 require("dotenv").config();
 
-const { streamRewriteText, SYSTEM_PROMPT } = require("./rewriteService");
+const { streamRewriteText, testProviderConnection, SYSTEM_PROMPT } = require("./rewriteService");
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_SHORTCUT = "CommandOrControl+Shift+Space";
@@ -483,6 +483,10 @@ ipcMain.handle("permissions:request-accessibility", async () => {
 ipcMain.handle("permissions:open-settings", async () => {
   await openPermissionSettings();
   return { ok: true };
+});
+
+ipcMain.handle("provider:test", async (_event, testSettings) => {
+  return testProviderConnection(testSettings);
 });
 
 app.whenReady().then(() => {

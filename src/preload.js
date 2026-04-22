@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("rewriteHelper", {
     return () => ipcRenderer.removeListener("rewrite:card", handler);
   },
   hideWindow: () => ipcRenderer.invoke("window:hide"),
+  testProvider: (testSettings) => ipcRenderer.invoke("provider:test", testSettings),
   getSettings: () => ipcRenderer.invoke("settings:get"),
   saveSettings: (settings) => ipcRenderer.invoke("settings:save", settings),
   getPermissions: () => ipcRenderer.invoke("permissions:get"),
