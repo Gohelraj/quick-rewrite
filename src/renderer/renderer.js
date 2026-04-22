@@ -265,19 +265,35 @@ async function runRewrite() {
   showLoadingState();
   setStatus("Creating rewrite suggestions…");
 
+  let firstCardReceived = false;
+  const cleanupCardListener = window.rewriteHelper.onRewriteCard((card) => {
+    if (!firstCardReceived) {
+      firstCardReceived = true;
+      hideLoadingState();
+    }
+    renderCard(card.label, card.text);
+  });
+
   try {
     const result = await window.rewriteHelper.runRewrite(text);
-    renderResults(result);
     const elapsedMs = Date.now() - requestStartedAt;
     latencyPill.textContent = `${(elapsedMs / 1000).toFixed(elapsedMs >= 10000 ? 0 : 1)}s`;
     cachePill.textContent = result?.meta?.cached ? "Cached" : "Fresh";
     setStatus(result?.meta?.cached ? "Suggestions loaded from cache." : "Suggestions ready.");
+    const tokens = result?.meta?.tokens;
+    if (tokens) {
+      tokenPill.textContent = `${tokens.toLocaleString()} tokens`;
+      tokenPill.classList.remove("isHidden");
+    } else {
+      tokenPill.classList.add("isHidden");
+    }
   } catch (error) {
     hideLoadingState();
     resultsSummary.classList.add("isHidden");
     emptyState.classList.remove("isHidden");
     setStatus(error.message || "Failed to generate suggestions.", true);
   } finally {
+    cleanupCardListener();
     rewriteButton.disabled = false;
     rewriteButton.textContent = "Generate Suggestions";
   }

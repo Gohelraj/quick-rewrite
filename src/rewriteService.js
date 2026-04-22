@@ -1,3 +1,8 @@
+const CARD_LABELS = {
+  grammar_fixed: "Grammar Fix",
+  rewritten: "Improved Rewrite",
+};
+
 const SYSTEM_PROMPT = `
 You rewrite text for real-world communication.
 Return strict JSON with this shape:
@@ -509,6 +514,285 @@ async function callOpenRouter(inputText, settings, options = {}) {
   return { text: extractOpenRouterOutputText(payload), usage: extractUsage(payload, "openrouter") };
 }
 
+function unescapeJsonString(s) {
+  try {
+    return JSON.parse(`"${s}"`);
+  } catch {
+    return s;
+  }
+}
+
+// Scans the accumulated streaming buffer and emits any newly-completed card fields.
+// Returns an array of newly emitted cards; updates `emitted` in place.
+function extractCompletedCards(buffer, emitted) {
+  const cards = [];
+
+  if (!emitted.has("grammar_fixed")) {
+    const match = buffer.match(/"grammar_fixed"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (match) {
+      cards.push({ id: "grammar_fixed", label: CARD_LABELS.grammar_fixed, text: unescapeJsonString(match[1]) });
+      emitted.add("grammar_fixed");
+    }
+  }
+
+  if (!emitted.has("rewritten")) {
+    const match = buffer.match(/"rewritten"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (match) {
+      cards.push({ id: "rewritten", label: CARD_LABELS.rewritten, text: unescapeJsonString(match[1]) });
+      emitted.add("rewritten");
+    }
+  }
+
+  const tonePattern = /"id"\s*:\s*"([^"]*)"\s*,\s*"label"\s*:\s*"([^"]*)"\s*,\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+  for (const m of buffer.matchAll(tonePattern)) {
+    const key = `tone:${m[1]}`;
+    if (!emitted.has(key)) {
+      cards.push({ id: m[1], label: unescapeJsonString(m[2]), text: unescapeJsonString(m[3]) });
+      emitted.add(key);
+    }
+  }
+
+  return cards;
+}
+
+// Called after streaming ends to emit any cards that weren't detected incrementally.
+// Returns the fully normalized payload for caching.
+async function emitRemainingCards(jsonBuffer, emitted, onCard, settings) {
+  let parsed;
+  try {
+    parsed = parseJsonCandidate(jsonBuffer);
+  } catch {
+    parsed = await repairMalformedJson(jsonBuffer, settings);
+  }
+
+  const normalized = normalizeRewritePayload(parsed) || parsed;
+  if (!normalized.grammar_fixed || !normalized.rewritten || !Array.isArray(normalized.tones)) {
+    throw new Error("The AI response JSON was missing expected fields.");
+  }
+
+  if (!emitted.has("grammar_fixed")) {
+    onCard({ id: "grammar_fixed", label: CARD_LABELS.grammar_fixed, text: normalized.grammar_fixed });
+    emitted.add("grammar_fixed");
+  }
+  if (!emitted.has("rewritten")) {
+    onCard({ id: "rewritten", label: CARD_LABELS.rewritten, text: normalized.rewritten });
+    emitted.add("rewritten");
+  }
+  for (const tone of normalized.tones) {
+    if (!emitted.has(`tone:${tone.id}`)) {
+      onCard({ id: tone.id, label: tone.label, text: tone.text });
+      emitted.add(`tone:${tone.id}`);
+    }
+  }
+
+  return normalized;
+}
+
+async function streamOpenRouter(inputText, settings, onCard) {
+  const apiKey = settings.openrouterApiKey || process.env.OPENROUTER_API_KEY;
+  const model = settings.openrouterModel || process.env.OPENROUTER_MODEL || "openai/gpt-4.1-mini";
+  const baseUrl = settings.openrouterBaseUrl || process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
+  const httpReferer = settings.openrouterHttpReferer || process.env.OPENROUTER_HTTP_REFERER || "https://example.com";
+  const appTitle = settings.openrouterAppTitle || process.env.OPENROUTER_APP_TITLE || "Quick Rewrite";
+  const systemPrompt = settings.customPrompt?.trim() || SYSTEM_PROMPT;
+
+  if (!apiKey) throw new Error("Missing OpenRouter API key. Add it in Settings or your .env file.");
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": httpReferer,
+      "X-OpenRouter-Title": appTitle,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: inputText },
+      ],
+      max_tokens: 1500,
+      temperature: 0.4,
+      response_format: { type: "json_object" },
+      stream: true,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Rewrite request failed: ${response.status} ${errorBody}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let sseBuffer = "";
+  let jsonBuffer = "";
+  const emitted = new Set();
+  let usage = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    sseBuffer += decoder.decode(value, { stream: true });
+    const lines = sseBuffer.split("\n");
+    sseBuffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (data === "[DONE]") continue;
+
+      try {
+        const chunk = JSON.parse(data);
+        if (chunk.usage) usage = chunk.usage;
+        const delta = chunk.choices?.[0]?.delta?.content;
+        if (typeof delta === "string") {
+          jsonBuffer += delta;
+          for (const card of extractCompletedCards(jsonBuffer, emitted)) {
+            onCard(card);
+          }
+        }
+      } catch {
+        // Ignore malformed SSE chunk
+      }
+    }
+  }
+
+  const normalized = emitted.size < 6
+    ? await emitRemainingCards(jsonBuffer, emitted, onCard, settings)
+    : (() => { try { return normalizeRewritePayload(parseJsonCandidate(jsonBuffer)); } catch { return null; } })();
+
+  return {
+    usage: usage
+      ? { inputTokens: usage.prompt_tokens ?? 0, outputTokens: usage.completion_tokens ?? 0, totalTokens: usage.total_tokens ?? (usage.prompt_tokens ?? 0) + (usage.completion_tokens ?? 0) }
+      : null,
+    normalized,
+  };
+}
+
+async function streamOpenAI(inputText, settings, onCard) {
+  const apiKey = settings.openaiApiKey || process.env.OPENAI_API_KEY;
+  const model = settings.openaiModel || process.env.OPENAI_MODEL || "gpt-4.1-mini";
+  const baseUrl = settings.openaiBaseUrl || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+  const instructions = settings.customPrompt?.trim() || SYSTEM_PROMPT;
+
+  if (!apiKey) throw new Error("Missing OpenAI API key. Add it in Settings or your .env file.");
+
+  const response = await fetch(`${baseUrl}/responses`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      instructions,
+      input: inputText,
+      max_output_tokens: 1500,
+      temperature: 0.4,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "rewrite_result",
+          strict: true,
+          schema: OUTPUT_SCHEMA,
+        },
+      },
+      stream: true,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Rewrite request failed: ${response.status} ${errorBody}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let sseBuffer = "";
+  let jsonBuffer = "";
+  const emitted = new Set();
+  let usage = null;
+  let currentEvent = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    sseBuffer += decoder.decode(value, { stream: true });
+    const lines = sseBuffer.split("\n");
+    sseBuffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (line.startsWith("event: ")) {
+        currentEvent = line.slice(7).trim();
+        continue;
+      }
+
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+
+      try {
+        const chunk = JSON.parse(data);
+        if (currentEvent === "response.output_text.delta") {
+          const delta = chunk.delta;
+          if (typeof delta === "string") {
+            jsonBuffer += delta;
+            for (const card of extractCompletedCards(jsonBuffer, emitted)) {
+              onCard(card);
+            }
+          }
+        } else if (currentEvent === "response.done") {
+          usage = chunk.response?.usage ?? null;
+        }
+      } catch {
+        // Ignore malformed SSE chunk
+      }
+    }
+  }
+
+  const normalized = emitted.size < 6
+    ? await emitRemainingCards(jsonBuffer, emitted, onCard, settings)
+    : (() => { try { return normalizeRewritePayload(parseJsonCandidate(jsonBuffer)); } catch { return null; } })();
+
+  return {
+    usage: usage
+      ? { inputTokens: usage.input_tokens ?? 0, outputTokens: usage.output_tokens ?? 0, totalTokens: (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0) }
+      : null,
+    normalized,
+  };
+}
+
+async function streamRewriteText(inputText, settings = {}, onCard) {
+  const cacheKey = buildCacheKey(inputText, settings);
+  const cached = getCachedResult(cacheKey);
+
+  if (cached) {
+    onCard({ id: "grammar_fixed", label: CARD_LABELS.grammar_fixed, text: cached.grammar_fixed });
+    onCard({ id: "rewritten", label: CARD_LABELS.rewritten, text: cached.rewritten });
+    for (const tone of cached.tones) {
+      onCard({ id: tone.id, label: tone.label, text: tone.text });
+    }
+    return { meta: { ...cached.meta, cached: true } };
+  }
+
+  const provider = settings.provider || process.env.LLM_PROVIDER || "openrouter";
+  const { usage, normalized } =
+    provider === "openai"
+      ? await streamOpenAI(inputText, settings, onCard)
+      : await streamOpenRouter(inputText, settings, onCard);
+
+  const result = {
+    ...(normalized || {}),
+    meta: { cached: false, provider, tokens: usage?.totalTokens ?? null },
+  };
+
+  if (normalized) setCachedResult(cacheKey, result);
+  return result;
+}
+
 async function rewriteText(inputText, settings = {}) {
   const cacheKey = buildCacheKey(inputText, settings);
   const cached = getCachedResult(cacheKey);
@@ -557,5 +841,6 @@ async function rewriteText(inputText, settings = {}) {
 
 module.exports = {
   rewriteText,
+  streamRewriteText,
   SYSTEM_PROMPT,
 };

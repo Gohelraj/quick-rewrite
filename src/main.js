@@ -19,7 +19,7 @@ const {
 
 require("dotenv").config();
 
-const { rewriteText, SYSTEM_PROMPT } = require("./rewriteService");
+const { streamRewriteText, SYSTEM_PROMPT } = require("./rewriteService");
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_SHORTCUT = "CommandOrControl+Shift+Space";
@@ -398,7 +398,11 @@ ipcMain.handle("rewrite:run", async (_event, inputText) => {
     throw new Error("Please select text first.");
   }
 
-  return rewriteText(inputText.trim(), settings);
+  return streamRewriteText(inputText.trim(), settings, (card) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("rewrite:card", card);
+    }
+  });
 });
 
 ipcMain.handle("clipboard:write", async (_event, text) => {

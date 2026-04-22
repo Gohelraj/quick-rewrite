@@ -9,6 +9,11 @@ contextBridge.exposeInMainWorld("rewriteHelper", {
   runRewrite: (text) => ipcRenderer.invoke("rewrite:run", text),
   copyText: (text) => ipcRenderer.invoke("clipboard:write", text),
   replaceText: (text) => ipcRenderer.invoke("text:replace", text),
+  onRewriteCard: (callback) => {
+    const handler = (_event, card) => callback(card);
+    ipcRenderer.on("rewrite:card", handler);
+    return () => ipcRenderer.removeListener("rewrite:card", handler);
+  },
   hideWindow: () => ipcRenderer.invoke("window:hide"),
   getSettings: () => ipcRenderer.invoke("settings:get"),
   saveSettings: (settings) => ipcRenderer.invoke("settings:save", settings),
