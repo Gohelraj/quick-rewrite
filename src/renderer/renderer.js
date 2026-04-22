@@ -44,6 +44,7 @@ let currentPermissions = null;
 let hasAutoOpenedSetup = false;
 let requestStartedAt = 0;
 let defaultPromptText = "";
+let canReplace = false;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function escapeHtml(text) {
@@ -98,15 +99,32 @@ function renderCard(title, text) {
   const titleNode = fragment.querySelector(".resultTitle");
   const bodyNode = fragment.querySelector(".resultBody");
   const copyButton = fragment.querySelector(".copyButton");
+  const replaceButton = fragment.querySelector(".replaceButton");
 
   badgeNode.textContent = title;
   titleNode.textContent = title;
   bodyNode.innerHTML = escapeHtml(text).replaceAll("\n", "<br>");
 
+  if (!canReplace) {
+    replaceButton.classList.add("isHidden");
+  } else {
+    replaceButton.addEventListener("click", async () => {
+      replaceButton.disabled = true;
+      replaceButton.textContent = "Replacing…";
+      try {
+        await window.rewriteHelper.replaceText(text);
+        setStatus(`Replaced with ${title.toLowerCase()}.`);
+      } catch (error) {
+        replaceButton.disabled = false;
+        replaceButton.textContent = "Replace";
+        setStatus(error.message || "Failed to replace text.", true);
+      }
+    });
+  }
+
   copyButton.addEventListener("click", async () => {
     await window.rewriteHelper.copyText(text);
 
-    // Visual feedback: flash green for 1.5 s then revert
     copyButton.textContent = "Copied!";
     copyButton.classList.add("copyDone");
     setTimeout(() => {
@@ -385,7 +403,8 @@ document.addEventListener("keydown", (event) => {
 });
 
 // ── IPC event handlers ────────────────────────────────────────────────────────
-window.rewriteHelper.onSelectionLoaded(({ selectedText, shortcut, settings }) => {
+window.rewriteHelper.onSelectionLoaded(({ selectedText, shortcut, settings, canReplace: cr }) => {
+  canReplace = cr || false;
   // Reset to a clean slate every time the app opens via the shortcut
   resultsContainer.innerHTML = "";
   hideLoadingState();
@@ -422,6 +441,7 @@ window.rewriteHelper.onSelectionLoaded(({ selectedText, shortcut, settings }) =>
 });
 
 window.rewriteHelper.onSelectionError(({ message, shortcut, settings }) => {
+  canReplace = false;
   // Reset to a clean slate on error too so stale results don't linger
   resultsContainer.innerHTML = "";
   hideLoadingState();

@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("rewriteHelper", {
   getDefaultPrompt: () => ipcRenderer.invoke("prompt:getDefault"),
   runRewrite: (text) => ipcRenderer.invoke("rewrite:run", text),
   copyText: (text) => ipcRenderer.invoke("clipboard:write", text),
+  replaceText: (text) => ipcRenderer.invoke("text:replace", text),
   hideWindow: () => ipcRenderer.invoke("window:hide"),
   getSettings: () => ipcRenderer.invoke("settings:get"),
   saveSettings: (settings) => ipcRenderer.invoke("settings:save", settings),

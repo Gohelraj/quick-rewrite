@@ -31,6 +31,8 @@ let tray;
 let selectedTextCache = "";
 let settings;
 let shortcutRegistered = false;
+let sourceApp = null;
+let originalClipboard = "";
 
 nativeTheme.themeSource = "light";
 
@@ -142,8 +144,53 @@ async function simulateCopyShortcut() {
   throw new Error("Selected text capture is only implemented for macOS and Windows.");
 }
 
+async function captureSourceApp() {
+  if (process.platform === "darwin") {
+    const { stdout } = await execFileAsync("osascript", [
+      "-e",
+      'tell application "System Events" to get name of first process whose frontmost is true',
+    ]);
+    return { platform: "darwin", appName: stdout.trim() };
+  }
+
+  if (process.platform === "win32") {
+    const { stdout } = await execFileAsync("powershell", [
+      "-NoProfile",
+      "-Command",
+      "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class WinCapture { [DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow(); }' -Language CSharp; [WinCapture]::GetForegroundWindow().ToInt64()",
+    ]);
+    return { platform: "win32", hwnd: stdout.trim() };
+  }
+
+  return null;
+}
+
+async function simulatePasteToSourceApp() {
+  if (!sourceApp) return;
+
+  if (sourceApp.platform === "darwin") {
+    const safeName = sourceApp.appName.replace(/[\r\n"\\]/g, "");
+    const script = [
+      `tell application "${safeName}" to activate`,
+      "delay 0.15",
+      'tell application "System Events" to keystroke "v" using command down',
+    ].join("\n");
+    await execFileAsync("osascript", ["-e", script]);
+    return;
+  }
+
+  if (sourceApp.platform === "win32") {
+    await execFileAsync("powershell", [
+      "-NoProfile",
+      "-Command",
+      `$hwnd = [IntPtr][int64]${sourceApp.hwnd}; Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class WinPaste { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); }' -Language CSharp; [WinPaste]::ShowWindow($hwnd, 5); [WinPaste]::SetForegroundWindow($hwnd); Start-Sleep -Milliseconds 200; Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')`,
+    ]);
+    return;
+  }
+}
+
 async function captureSelectedText() {
-  const previousClipboardText = clipboard.readText();
+  originalClipboard = clipboard.readText();
 
   await simulateCopyShortcut();
   await delay(COPY_WAIT_MS);
@@ -151,9 +198,9 @@ async function captureSelectedText() {
   const capturedText = clipboard.readText().trim();
 
   await delay(30);
-  clipboard.writeText(previousClipboardText);
+  clipboard.writeText(originalClipboard);
 
-  if (capturedText && capturedText !== previousClipboardText) {
+  if (capturedText && capturedText !== originalClipboard) {
     selectedTextCache = capturedText;
     return selectedTextCache;
   }
@@ -191,7 +238,14 @@ function showMainWindow() {
 }
 
 async function openRewriteWindow() {
+  sourceApp = null;
   try {
+    try {
+      sourceApp = await captureSourceApp();
+    } catch {
+      // Non-fatal: Replace won't be available, but rewrite still works
+    }
+
     const selectedText = await captureSelectedText();
 
     showMainWindow();
@@ -200,6 +254,7 @@ async function openRewriteWindow() {
       shortcut: settings.shortcut,
       platform: process.platform,
       settings,
+      canReplace: sourceApp !== null,
     });
   } catch (error) {
     showMainWindow();
@@ -208,6 +263,7 @@ async function openRewriteWindow() {
       shortcut: settings.shortcut,
       platform: process.platform,
       settings,
+      canReplace: false,
     });
   }
 }
@@ -347,6 +403,25 @@ ipcMain.handle("rewrite:run", async (_event, inputText) => {
 
 ipcMain.handle("clipboard:write", async (_event, text) => {
   clipboard.writeText(text || "");
+  return { ok: true };
+});
+
+ipcMain.handle("text:replace", async (_event, text) => {
+  if (!text) throw new Error("No text to replace with.");
+  if (!sourceApp) throw new Error("Replace is only available when triggered via the global shortcut.");
+
+  clipboard.writeText(text);
+  mainWindow.hide();
+  await delay(80);
+
+  try {
+    await simulatePasteToSourceApp();
+  } finally {
+    await delay(200);
+    clipboard.writeText(originalClipboard);
+    sourceApp = null;
+  }
+
   return { ok: true };
 });
 

@@ -389,6 +389,37 @@ textarea::placeholder {
   display: none;
 }
 
+.cardActions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.replaceButton {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: var(--accent-bg-hi);
+  color: var(--accent-dark);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+
+.replaceButton:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff8f3;
+}
+
+.replaceButton:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+
 .copyButton {
   display: inline-flex;
   align-items: center;
