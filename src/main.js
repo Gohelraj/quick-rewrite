@@ -150,14 +150,15 @@ async function captureSelectedText() {
 
   const capturedText = clipboard.readText().trim();
 
-  if (capturedText && capturedText !== previousClipboardText) {
-    selectedTextCache = capturedText;
-  }
-
   await delay(30);
   clipboard.writeText(previousClipboardText);
 
-  return selectedTextCache;
+  if (capturedText && capturedText !== previousClipboardText) {
+    selectedTextCache = capturedText;
+    return selectedTextCache;
+  }
+
+  return "";
 }
 
 function positionWindowNearCursor() {
