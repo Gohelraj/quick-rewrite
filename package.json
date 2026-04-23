@@ -1,6 +1,6 @@
 {
   "name": "quick-rewrite",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Cross-platform desktop text rewrite assistant with a global shortcut.",
   "license": "MIT",
   "main": "src/main.js",
