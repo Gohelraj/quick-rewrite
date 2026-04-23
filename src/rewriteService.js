@@ -83,13 +83,14 @@ function getProviderModel(settings) {
   };
 }
 
-function buildCacheKey(inputText, settings) {
+function buildCacheKey(inputText, settings, length) {
   const { provider, model } = getProviderModel(settings);
   return JSON.stringify({
     provider,
     model,
     inputText: inputText.trim(),
     customPrompt: settings.customPrompt?.trim() || "",
+    length: length || "same",
     promptVersion: 2,
   });
 }
@@ -775,7 +776,7 @@ async function streamOpenAI(inputText, settings, onCard, options = {}) {
 }
 
 async function streamRewriteText(inputText, settings = {}, onCard, options = {}) {
-  const cacheKey = buildCacheKey(inputText, settings);
+  const cacheKey = buildCacheKey(inputText, settings, options.length);
   const cached = getCachedResult(cacheKey);
 
   if (cached) {
