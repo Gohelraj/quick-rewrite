@@ -8,8 +8,10 @@ const tokenPill = document.getElementById("tokenPill");
 const latencyPill = document.getElementById("latencyPill");
 const cachePill = document.getElementById("cachePill");
 const rewriteButton = document.getElementById("rewriteButton");
+const stopButton = document.getElementById("stopButton");
 const clearButton = document.getElementById("clearButton");
 const closeButton = document.getElementById("closeButton");
+const pinButton = document.getElementById("pinButton");
 const showRewriteTab = document.getElementById("showRewriteTab");
 const showPermissionsTab = document.getElementById("showPermissionsTab");
 const showSettingsTab = document.getElementById("showSettingsTab");
@@ -44,8 +46,14 @@ const resultsContainer = document.getElementById("resultsContainer");
 const cardTemplate = document.getElementById("cardTemplate");
 const openrouterBlock = document.getElementById("openrouterBlock");
 const openaiBlock = document.getElementById("openaiBlock");
-
 const resetPromptButton = document.getElementById("resetPromptButton");
+const promptCharCount = document.getElementById("promptCharCount");
+const toastContainer = document.getElementById("toastContainer");
+const updateBanner = document.getElementById("updateBanner");
+const updateBannerText = document.getElementById("updateBannerText");
+const installUpdateButton = document.getElementById("installUpdateButton");
+const dismissUpdateButton = document.getElementById("dismissUpdateButton");
+const setupSuccessBanner = document.getElementById("setupSuccessBanner");
 
 // ── State ────────────────────────────────────────────────────────────────────
 let currentSettings = null;
@@ -55,6 +63,23 @@ let requestStartedAt = 0;
 let defaultPromptText = "";
 let canReplace = false;
 let rewriteHistory = [];
+let currentLength = "same";
+let isPinned = false;
+
+// ── Toast ────────────────────────────────────────────────────────────────────
+function showToast(message, type = "info", durationMs = 3000) {
+  const toast = document.createElement("div");
+  toast.className = `toast toast${type.charAt(0).toUpperCase() + type.slice(1)}`;
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+
+  const dismiss = () => {
+    toast.classList.add("toastFadeOut");
+    toast.addEventListener("animationend", () => toast.remove(), { once: true });
+  };
+
+  setTimeout(dismiss, durationMs);
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function escapeHtml(text) {
@@ -76,11 +101,11 @@ function getWordCount(text) {
 function updateSourceMeta() {
   const text = sourceText.value || "";
   const wordCount = getWordCount(text);
-  wordCountPill.textContent = `${wordCount} ${wordCount === 1 ? "word" : "words"}`;
+  const charCount = text.length;
+  wordCountPill.textContent = `${wordCount} ${wordCount === 1 ? "word" : "words"} · ${charCount.toLocaleString()} chars`;
   providerPill.textContent = currentSettings?.provider === "openai" ? "OpenAI" : "OpenRouter";
 }
 
-/** Returns true if the active provider has an API key configured. */
 function isProviderConfigured() {
   const provider = currentSettings?.provider || "openrouter";
   return provider === "openai"
@@ -103,17 +128,41 @@ function hideLoadingState() {
   loadingState.classList.add("isHidden");
 }
 
-function renderCard(title, text) {
+function setGenerating(generating) {
+  rewriteButton.disabled = generating;
+  rewriteButton.querySelector(".kbdHint").style.opacity = generating ? "0" : "";
+  stopButton.classList.toggle("isHidden", !generating);
+  clearButton.classList.toggle("isHidden", generating);
+  if (generating) {
+    rewriteButton.childNodes[0].textContent = "Generating…";
+  } else {
+    rewriteButton.childNodes[0].textContent = "Rewrite";
+  }
+}
+
+// ── Cards ────────────────────────────────────────────────────────────────────
+function renderCard(title, text, originalText = null) {
   const fragment = cardTemplate.content.cloneNode(true);
+  const cardEl = fragment.querySelector(".resultCard");
   const badgeNode = fragment.querySelector(".resultBadge");
   const titleNode = fragment.querySelector(".resultTitle");
   const bodyNode = fragment.querySelector(".resultBody");
   const copyButton = fragment.querySelector(".copyButton");
   const replaceButton = fragment.querySelector(".replaceButton");
 
+  const isNoChange = originalText !== null && text.trim() === originalText.trim();
+
   badgeNode.textContent = title;
+  if (isNoChange) {
+    const noChangePill = document.createElement("span");
+    noChangePill.className = "noChangeBadge";
+    noChangePill.textContent = "no change";
+    badgeNode.appendChild(noChangePill);
+    cardEl.classList.add("noChange");
+  }
+
   titleNode.textContent = title;
-  bodyNode.innerHTML = escapeHtml(text).replaceAll("\n", "<br>");
+  bodyNode.textContent = text;
 
   if (!canReplace) {
     replaceButton.classList.add("isHidden");
@@ -123,25 +172,30 @@ function renderCard(title, text) {
       replaceButton.textContent = "Replacing…";
       try {
         await window.rewriteHelper.replaceText(text);
+        replaceButton.textContent = "✓ Replaced";
+        replaceButton.classList.add("replaceDone");
         setStatus(`Replaced with ${title.toLowerCase()}.`);
+        setTimeout(() => {
+          replaceButton.disabled = false;
+          replaceButton.textContent = "Replace";
+          replaceButton.classList.remove("replaceDone");
+        }, 2000);
       } catch (error) {
         replaceButton.disabled = false;
         replaceButton.textContent = "Replace";
-        setStatus(error.message || "Failed to replace text.", true);
+        showToast(error.message || "Failed to replace text.", "error");
       }
     });
   }
 
   copyButton.addEventListener("click", async () => {
     await window.rewriteHelper.copyText(text);
-
-    copyButton.textContent = "Copied!";
+    copyButton.textContent = "✓ Copied";
     copyButton.classList.add("copyDone");
     setTimeout(() => {
       copyButton.textContent = "Copy";
       copyButton.classList.remove("copyDone");
     }, 1500);
-
     setStatus(`Copied ${title.toLowerCase()} to clipboard.`);
   });
 
@@ -162,14 +216,15 @@ function renderResults(payload) {
     tokenPill.classList.add("isHidden");
   }
 
-  renderCard("Grammar Fix", payload.grammar_fixed);
-  renderCard("Improved Rewrite", payload.rewritten);
-
+  const original = sourceText.value.trim();
+  renderCard("Grammar Fix", payload.grammar_fixed, original);
+  renderCard("Improved Rewrite", payload.rewritten, original);
   for (const tone of payload.tones) {
-    renderCard(tone.label, tone.text);
+    renderCard(tone.label, tone.text, original);
   }
 }
 
+// ── Tabs ─────────────────────────────────────────────────────────────────────
 function showTab(name) {
   rewritePanel.classList.toggle("isHidden", name !== "rewrite");
   permissionsPanel.classList.toggle("isHidden", name !== "permissions");
@@ -194,6 +249,13 @@ function relativeTime(ts) {
 function pushHistory(inputText, cards) {
   rewriteHistory.unshift({ id: Date.now(), timestamp: Date.now(), inputText, cards });
   if (rewriteHistory.length > 50) rewriteHistory.pop();
+  window.rewriteHelper.saveHistory(rewriteHistory).catch(() => {});
+}
+
+function deleteHistoryEntry(id) {
+  rewriteHistory = rewriteHistory.filter((e) => e.id !== id);
+  window.rewriteHelper.saveHistory(rewriteHistory).catch(() => {});
+  renderHistoryList();
 }
 
 function loadFromHistory(entry) {
@@ -207,8 +269,9 @@ function loadFromHistory(entry) {
   tokenPill.classList.add("isHidden");
   latencyPill.textContent = "History";
   cachePill.textContent = "Restored";
+  const original = entry.inputText.trim();
   for (const card of entry.cards) {
-    renderCard(card.label, card.text);
+    renderCard(card.label, card.text, original);
   }
   setStatus("Loaded from history.");
   showTab("rewrite");
@@ -226,16 +289,24 @@ function renderHistoryList() {
   for (const entry of rewriteHistory) {
     const item = document.createElement("div");
     item.className = "historyItem";
-    const preview = entry.inputText.length > 60
-      ? escapeHtml(entry.inputText.slice(0, 60)) + "…"
-      : escapeHtml(entry.inputText);
+    const preview =
+      entry.inputText.length > 55
+        ? escapeHtml(entry.inputText.slice(0, 55)) + "…"
+        : escapeHtml(entry.inputText);
     item.innerHTML = `
       <span class="historyTime">${relativeTime(entry.timestamp)}</span>
       <span class="historyPreview">${preview}</span>
       <span class="historyCount">${entry.cards.length} cards</span>
-      <button class="ghostButton compactButton historyLoadBtn" type="button">Load</button>
+      <div class="historyActions">
+        <button class="ghostButton compactButton historyLoadBtn" type="button">Load</button>
+        <button class="historyDeleteBtn" type="button" title="Delete" aria-label="Delete entry">✕</button>
+      </div>
     `;
     item.querySelector(".historyLoadBtn").addEventListener("click", () => loadFromHistory(entry));
+    item.querySelector(".historyDeleteBtn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteHistoryEntry(entry.id);
+    });
     historyList.appendChild(item);
   }
 }
@@ -245,6 +316,11 @@ function updateProviderSections() {
   const isOpenRouter = settingsForm.provider.value === "openrouter";
   openrouterBlock.classList.toggle("isHidden", !isOpenRouter);
   openaiBlock.classList.toggle("isHidden", isOpenRouter);
+}
+
+function updatePromptCharCount() {
+  const len = settingsForm.customPrompt.value.length;
+  promptCharCount.textContent = `${len.toLocaleString()} chars`;
 }
 
 function populateSettingsForm(settings) {
@@ -264,18 +340,15 @@ function populateSettingsForm(settings) {
   shortcutText.textContent = settings.shortcut || "";
   updateProviderSections();
   updateSourceMeta();
+  updatePromptCharCount();
 }
 
 // ── Permissions ──────────────────────────────────────────────────────────────
 function setPillState(node, state, text) {
   node.classList.remove("isReady", "isWarn", "isMuted");
-  if (state === "ready") {
-    node.classList.add("isReady");
-  } else if (state === "warn") {
-    node.classList.add("isWarn");
-  } else {
-    node.classList.add("isMuted");
-  }
+  if (state === "ready") node.classList.add("isReady");
+  else if (state === "warn") node.classList.add("isWarn");
+  else node.classList.add("isMuted");
   node.textContent = text;
 }
 
@@ -311,7 +384,17 @@ function renderPermissions(status) {
     setPillState(providerStatus, "warn", "Missing Key");
   }
   providerDetail.textContent = `Current provider: ${status.provider}`;
+
+  // Show success banner when everything is ready
+  const accessibilityOk = !status.accessibility.supported || status.accessibility.granted;
+  const allReady = accessibilityOk && status.shortcutRegistered && status.providerConfigured;
+  setupSuccessBanner.classList.toggle("isHidden", !allReady);
 }
+
+// ── Offline detection ─────────────────────────────────────────────────────────
+window.addEventListener("offline", () => {
+  showToast("No internet connection — rewrites will fail.", "error", 5000);
+});
 
 // ── Rewrite ───────────────────────────────────────────────────────────────────
 async function runRewrite() {
@@ -322,7 +405,11 @@ async function runRewrite() {
     return;
   }
 
-  // Guard: catch missing API key before hitting the network
+  if (!navigator.onLine) {
+    showToast("No internet connection.", "error");
+    return;
+  }
+
   if (!isProviderConfigured()) {
     const providerName = currentSettings?.provider === "openai" ? "OpenAI" : "OpenRouter";
     setStatus(`No API key set for ${providerName}. Opening Settings…`, true);
@@ -330,8 +417,7 @@ async function runRewrite() {
     return;
   }
 
-  rewriteButton.disabled = true;
-  rewriteButton.textContent = "Generating…";
+  setGenerating(true);
   requestStartedAt = Date.now();
   showLoadingState();
   setStatus("Creating rewrite suggestions…");
@@ -344,11 +430,11 @@ async function runRewrite() {
       hideLoadingState();
     }
     collectedCards.push(card);
-    renderCard(card.label, card.text);
+    renderCard(card.label, card.text, text);
   });
 
   try {
-    const result = await window.rewriteHelper.runRewrite(text);
+    const result = await window.rewriteHelper.runRewrite(text, { length: currentLength });
     const elapsedMs = Date.now() - requestStartedAt;
     latencyPill.textContent = `${(elapsedMs / 1000).toFixed(elapsedMs >= 10000 ? 0 : 1)}s`;
     cachePill.textContent = result?.meta?.cached ? "Cached" : "Fresh";
@@ -362,19 +448,37 @@ async function runRewrite() {
       tokenPill.classList.add("isHidden");
     }
   } catch (error) {
+    const isAbort = error?.name === "AbortError" || error?.message?.includes("aborted");
     hideLoadingState();
-    resultsSummary.classList.add("isHidden");
-    emptyState.classList.remove("isHidden");
-    setStatus(error.message || "Failed to generate suggestions.", true);
+    if (collectedCards.length === 0) {
+      resultsSummary.classList.add("isHidden");
+      emptyState.classList.remove("isHidden");
+    }
+    if (isAbort) {
+      setStatus("Stopped.");
+    } else {
+      showToast(error.message || "Failed to generate suggestions.", "error", 5000);
+      setStatus(error.message || "Failed to generate suggestions.", true);
+    }
   } finally {
     cleanupCardListener();
-    rewriteButton.disabled = false;
-    rewriteButton.textContent = "Generate Suggestions";
+    setGenerating(false);
   }
 }
 
 // ── Event listeners ───────────────────────────────────────────────────────────
 rewriteButton.addEventListener("click", runRewrite);
+
+stopButton.addEventListener("click", async () => {
+  await window.rewriteHelper.abortRewrite();
+  setStatus("Stopped.");
+  setGenerating(false);
+  hideLoadingState();
+  if (resultsContainer.children.length === 0) {
+    resultsSummary.classList.add("isHidden");
+    emptyState.classList.remove("isHidden");
+  }
+});
 
 clearButton.addEventListener("click", () => {
   sourceText.value = "";
@@ -390,6 +494,14 @@ closeButton.addEventListener("click", async () => {
   await window.rewriteHelper.hideWindow();
 });
 
+pinButton.addEventListener("click", async () => {
+  isPinned = !isPinned;
+  pinButton.classList.toggle("isPinned", isPinned);
+  pinButton.setAttribute("aria-pressed", String(isPinned));
+  pinButton.title = isPinned ? "Unpin window" : "Pin window (keep open)";
+  await window.rewriteHelper.setPinned(isPinned);
+});
+
 showRewriteTab.addEventListener("click", () => showTab("rewrite"));
 showPermissionsTab.addEventListener("click", () => showTab("permissions"));
 showSettingsTab.addEventListener("click", () => showTab("settings"));
@@ -397,8 +509,33 @@ showHistoryTab.addEventListener("click", () => showTab("history"));
 
 clearHistoryButton.addEventListener("click", () => {
   rewriteHistory = [];
+  window.rewriteHelper.saveHistory([]).catch(() => {});
   renderHistoryList();
 });
+
+// Length chip selection
+document.querySelectorAll(".lengthChip").forEach((chip) => {
+  chip.addEventListener("click", () => {
+    document.querySelectorAll(".lengthChip").forEach((c) => c.classList.remove("isActive"));
+    chip.classList.add("isActive");
+    currentLength = chip.dataset.length;
+  });
+});
+
+// Password show/hide toggles
+document.querySelectorAll(".eyeBtn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const input = document.getElementById(btn.dataset.target);
+    if (!input) return;
+    const isText = input.type === "text";
+    input.type = isText ? "password" : "text";
+    btn.querySelector(".eyeShow").classList.toggle("isHidden", !isText);
+    btn.querySelector(".eyeHide").classList.toggle("isHidden", isText);
+  });
+});
+
+// Prompt char counter
+document.getElementById("customPromptTextarea").addEventListener("input", updatePromptCharCount);
 
 async function testConnection(provider, statusEl, buttonEl) {
   buttonEl.disabled = true;
@@ -431,21 +568,17 @@ testOpenAIButton.addEventListener("click", () =>
   testConnection("openai", testOpenAIStatus, testOpenAIButton)
 );
 
-// Show only the active provider's settings fields
 settingsForm.provider.addEventListener("change", updateProviderSections);
 
 settingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   saveSettingsButton.disabled = true;
   saveSettingsButton.textContent = "Saving…";
-  setStatus("Saving settings…");
 
   try {
     const saved = await window.rewriteHelper.saveSettings({
       shortcut: settingsForm.shortcut.value.trim(),
       autoGenerate: settingsForm.autoGenerate.checked,
-      // Store empty string when user saves the default prompt unchanged,
-      // so future built-in prompt updates still apply automatically.
       customPrompt: settingsForm.customPrompt.value.trim() === defaultPromptText
         ? ""
         : settingsForm.customPrompt.value.trim(),
@@ -461,9 +594,10 @@ settingsForm.addEventListener("submit", async (event) => {
     });
 
     populateSettingsForm(saved);
-    setStatus("Settings saved.");
+    showToast("Settings saved.", "info");
     showTab("rewrite");
   } catch (error) {
+    showToast(error.message || "Failed to save settings.", "error");
     setStatus(error.message || "Failed to save settings.", true);
   } finally {
     saveSettingsButton.disabled = false;
@@ -472,25 +606,23 @@ settingsForm.addEventListener("submit", async (event) => {
 });
 
 refreshPermissionsButton.addEventListener("click", async () => {
-  setStatus("Refreshing permission status…");
   try {
     const status = await window.rewriteHelper.refreshPermissions();
     renderPermissions(status);
     setStatus("Permission status updated.");
   } catch (error) {
-    setStatus(error.message || "Failed to refresh permission status.", true);
+    showToast(error.message || "Failed to refresh permissions.", "error");
   }
 });
 
 requestAccessibilityButton.addEventListener("click", async () => {
-  setStatus("Opening accessibility permission prompt…");
   try {
     const status = await window.rewriteHelper.requestAccessibilityPermission();
     renderPermissions(status);
     showTab("permissions");
     setStatus("Accessibility prompt triggered. Grant access in System Settings if macOS shows it.");
   } catch (error) {
-    setStatus(error.message || "Failed to request accessibility access.", true);
+    showToast(error.message || "Failed to request accessibility access.", "error");
   }
 });
 
@@ -499,28 +631,33 @@ openPermissionSettingsButton.addEventListener("click", async () => {
     await window.rewriteHelper.openPermissionSettings();
     setStatus("Opened system permission settings.");
   } catch (error) {
-    setStatus(error.message || "Failed to open system settings.", true);
+    showToast(error.message || "Failed to open system settings.", "error");
   }
 });
 
 resetPromptButton.addEventListener("click", () => {
   settingsForm.customPrompt.value = defaultPromptText;
+  updatePromptCharCount();
 });
 
 sourceText.addEventListener("input", updateSourceMeta);
 
+// Update banner
+installUpdateButton.addEventListener("click", async () => {
+  await window.rewriteHelper.installUpdate();
+});
+dismissUpdateButton.addEventListener("click", () => {
+  updateBanner.classList.add("isHidden");
+});
+
 // Keyboard shortcuts
 document.addEventListener("keydown", (event) => {
-  // Cmd/Ctrl+Enter → generate
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
     event.preventDefault();
-    if (!rewriteButton.disabled) {
-      runRewrite();
-    }
+    if (!rewriteButton.disabled) runRewrite();
     return;
   }
 
-  // Escape → hide window (only when not editing a form field)
   if (event.key === "Escape") {
     const tag = document.activeElement?.tagName;
     if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") {
@@ -532,7 +669,6 @@ document.addEventListener("keydown", (event) => {
 // ── IPC event handlers ────────────────────────────────────────────────────────
 window.rewriteHelper.onSelectionLoaded(({ selectedText, shortcut, settings, canReplace: cr }) => {
   canReplace = cr || false;
-  // Reset to a clean slate every time the app opens via the shortcut
   resultsContainer.innerHTML = "";
   hideLoadingState();
   resultsSummary.classList.add("isHidden");
@@ -540,10 +676,7 @@ window.rewriteHelper.onSelectionLoaded(({ selectedText, shortcut, settings, canR
   sourceText.value = "";
   updateSourceMeta();
 
-  if (settings) {
-    populateSettingsForm(settings);
-  }
-
+  if (settings) populateSettingsForm(settings);
   shortcutText.textContent = shortcut;
   showTab("rewrite");
 
@@ -554,7 +687,6 @@ window.rewriteHelper.onSelectionLoaded(({ selectedText, shortcut, settings, canR
     sourceText.focus();
     sourceText.select();
 
-    // Auto-generate immediately if an API key is configured and the setting is on
     if (isProviderConfigured() && currentSettings?.autoGenerate !== false) {
       runRewrite();
     } else if (!isProviderConfigured()) {
@@ -569,7 +701,6 @@ window.rewriteHelper.onSelectionLoaded(({ selectedText, shortcut, settings, canR
 
 window.rewriteHelper.onSelectionError(({ message, shortcut, settings }) => {
   canReplace = false;
-  // Reset to a clean slate on error too so stale results don't linger
   resultsContainer.innerHTML = "";
   hideLoadingState();
   resultsSummary.classList.add("isHidden");
@@ -577,9 +708,7 @@ window.rewriteHelper.onSelectionError(({ message, shortcut, settings }) => {
   sourceText.value = "";
   updateSourceMeta();
 
-  if (settings) {
-    populateSettingsForm(settings);
-  }
+  if (settings) populateSettingsForm(settings);
   shortcutText.textContent = shortcut;
   setStatus(message, true);
 });
@@ -598,26 +727,37 @@ window.rewriteHelper.onPermissionsLoaded((status) => {
   }
 });
 
+window.rewriteHelper.onUpdateAvailable((info) => {
+  updateBannerText.textContent = `Version ${info.version} is downloading…`;
+  updateBanner.classList.remove("isHidden");
+});
+
+window.rewriteHelper.onUpdateDownloaded((info) => {
+  updateBannerText.textContent = `Version ${info.version} is ready to install.`;
+  updateBanner.classList.remove("isHidden");
+});
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
-// Fetch the default prompt first so the textarea can be pre-filled immediately
 window.rewriteHelper.getDefaultPrompt().then((prompt) => {
   defaultPromptText = prompt || "";
-  // If the prompt textarea is still empty (settings loaded before this resolved), fill it now
   if (!settingsForm.customPrompt.value) {
     settingsForm.customPrompt.value = defaultPromptText;
+    updatePromptCharCount();
   }
 });
 
 window.rewriteHelper.getSettings().then((settings) => {
-  if (settings) {
-    populateSettingsForm(settings);
-  }
+  if (settings) populateSettingsForm(settings);
 });
 
 window.rewriteHelper.getPermissions().then((status) => {
-  if (status) {
-    renderPermissions(status);
-  }
+  if (status) renderPermissions(status);
 });
+
+window.rewriteHelper.loadHistory().then((entries) => {
+  if (Array.isArray(entries) && entries.length > 0) {
+    rewriteHistory = entries;
+  }
+}).catch(() => {});
 
 updateSourceMeta();

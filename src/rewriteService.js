@@ -60,6 +60,17 @@ const OUTPUT_SCHEMA = {
   },
 };
 
+const LENGTH_HINTS = {
+  shorter: "\n\nLength guidance: Make each output noticeably more concise than the input — cut filler without losing meaning.",
+  longer: "\n\nLength guidance: Make each output somewhat fuller and more detailed than the input.",
+};
+
+function buildEffectivePrompt(settings, length) {
+  const base = settings.customPrompt?.trim() || SYSTEM_PROMPT;
+  const hint = (length && length !== "same") ? (LENGTH_HINTS[length] || "") : "";
+  return base + hint;
+}
+
 function getProviderModel(settings) {
   const provider = settings.provider || process.env.LLM_PROVIDER || "openrouter";
 
@@ -389,7 +400,7 @@ async function callOpenAI(inputText, settings, options = {}) {
   const apiKey = settings.openaiApiKey || process.env.OPENAI_API_KEY;
   const model = settings.openaiModel || process.env.OPENAI_MODEL || "gpt-4.1-mini";
   const baseUrl = settings.openaiBaseUrl || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
-  const instructions = options.instructions || settings.customPrompt?.trim() || SYSTEM_PROMPT;
+  const instructions = options.instructions || buildEffectivePrompt(settings, options.length);
   const textFormat = options.textFormat || {
     type: "json_schema",
     name: "rewrite_result",
@@ -403,6 +414,7 @@ async function callOpenAI(inputText, settings, options = {}) {
 
   const response = await fetch(`${baseUrl}/responses`, {
     method: "POST",
+    signal: options.signal,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
@@ -470,7 +482,7 @@ async function callOpenRouter(inputText, settings, options = {}) {
   const httpReferer =
     settings.openrouterHttpReferer || process.env.OPENROUTER_HTTP_REFERER || "https://example.com";
   const appTitle = settings.openrouterAppTitle || process.env.OPENROUTER_APP_TITLE || "Quick Rewrite";
-  const systemPrompt = options.systemPrompt || settings.customPrompt?.trim() || SYSTEM_PROMPT;
+  const systemPrompt = options.systemPrompt || buildEffectivePrompt(settings, options.length);
   const responseFormat = options.responseFormat || {
     type: "json_object",
   };
@@ -481,6 +493,7 @@ async function callOpenRouter(inputText, settings, options = {}) {
 
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
+    signal: options.signal,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
@@ -490,14 +503,8 @@ async function callOpenRouter(inputText, settings, options = {}) {
     body: JSON.stringify({
       model,
       messages: [
-        {
-          role: "system",
-          content: systemPrompt,
-        },
-        {
-          role: "user",
-          content: inputText,
-        },
+        { role: "system", content: systemPrompt },
+        { role: "user", content: inputText },
       ],
       max_tokens: 1500,
       temperature: 0.4,
@@ -588,18 +595,19 @@ async function emitRemainingCards(jsonBuffer, emitted, onCard, settings) {
   return normalized;
 }
 
-async function streamOpenRouter(inputText, settings, onCard) {
+async function streamOpenRouter(inputText, settings, onCard, options = {}) {
   const apiKey = settings.openrouterApiKey || process.env.OPENROUTER_API_KEY;
   const model = settings.openrouterModel || process.env.OPENROUTER_MODEL || "openai/gpt-4.1-mini";
   const baseUrl = settings.openrouterBaseUrl || process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
   const httpReferer = settings.openrouterHttpReferer || process.env.OPENROUTER_HTTP_REFERER || "https://example.com";
   const appTitle = settings.openrouterAppTitle || process.env.OPENROUTER_APP_TITLE || "Quick Rewrite";
-  const systemPrompt = settings.customPrompt?.trim() || SYSTEM_PROMPT;
+  const systemPrompt = buildEffectivePrompt(settings, options.length);
 
   if (!apiKey) throw new Error("Missing OpenRouter API key. Add it in Settings or your .env file.");
 
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
+    signal: options.signal,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
@@ -672,16 +680,17 @@ async function streamOpenRouter(inputText, settings, onCard) {
   };
 }
 
-async function streamOpenAI(inputText, settings, onCard) {
+async function streamOpenAI(inputText, settings, onCard, options = {}) {
   const apiKey = settings.openaiApiKey || process.env.OPENAI_API_KEY;
   const model = settings.openaiModel || process.env.OPENAI_MODEL || "gpt-4.1-mini";
   const baseUrl = settings.openaiBaseUrl || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
-  const instructions = settings.customPrompt?.trim() || SYSTEM_PROMPT;
+  const instructions = buildEffectivePrompt(settings, options.length);
 
   if (!apiKey) throw new Error("Missing OpenAI API key. Add it in Settings or your .env file.");
 
   const response = await fetch(`${baseUrl}/responses`, {
     method: "POST",
+    signal: options.signal,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
@@ -765,7 +774,7 @@ async function streamOpenAI(inputText, settings, onCard) {
   };
 }
 
-async function streamRewriteText(inputText, settings = {}, onCard) {
+async function streamRewriteText(inputText, settings = {}, onCard, options = {}) {
   const cacheKey = buildCacheKey(inputText, settings);
   const cached = getCachedResult(cacheKey);
 
@@ -781,8 +790,8 @@ async function streamRewriteText(inputText, settings = {}, onCard) {
   const provider = settings.provider || process.env.LLM_PROVIDER || "openrouter";
   const { usage, normalized } =
     provider === "openai"
-      ? await streamOpenAI(inputText, settings, onCard)
-      : await streamOpenRouter(inputText, settings, onCard);
+      ? await streamOpenAI(inputText, settings, onCard, options)
+      : await streamOpenRouter(inputText, settings, onCard, options);
 
   const result = {
     ...(normalized || {}),
