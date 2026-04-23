@@ -10,6 +10,7 @@ const {
   ipcMain,
   nativeTheme,
   nativeImage,
+  safeStorage,
   screen,
   shell,
   systemPreferences,
@@ -21,10 +22,23 @@ require("dotenv").config();
 
 const { streamRewriteText, testProviderConnection, SYSTEM_PROMPT } = require("./rewriteService");
 
+let autoUpdater;
+try {
+  autoUpdater = require("electron-updater").autoUpdater;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+} catch {
+  // electron-updater not available in dev without proper setup
+  autoUpdater = null;
+}
+
 const execFileAsync = promisify(execFile);
 const DEFAULT_SHORTCUT = "CommandOrControl+Shift+Space";
 const COPY_WAIT_MS = 220;
 const SETTINGS_FILE_NAME = "settings.json";
+const HISTORY_FILE_NAME = "history.json";
+const ENCRYPTED_KEY_SUFFIX = "_enc";
+const ENCRYPTABLE_KEYS = ["openaiApiKey", "openrouterApiKey"];
 
 let mainWindow;
 let tray;
@@ -33,8 +47,32 @@ let settings;
 let shortcutRegistered = false;
 let sourceApp = null;
 let originalClipboard = "";
+let isPinned = false;
+let currentAbortController = null;
 
 nativeTheme.themeSource = "light";
+
+// ── Encryption helpers ────────────────────────────────────────────────────────
+
+function canEncrypt() {
+  return safeStorage.isEncryptionAvailable();
+}
+
+function encryptApiKey(plaintext) {
+  if (!plaintext || !canEncrypt()) return plaintext;
+  return safeStorage.encryptString(plaintext).toString("base64");
+}
+
+function decryptApiKey(encryptedBase64) {
+  if (!encryptedBase64 || !canEncrypt()) return encryptedBase64;
+  try {
+    return safeStorage.decryptString(Buffer.from(encryptedBase64, "base64"));
+  } catch {
+    return "";
+  }
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
 
 function getDefaultSettings() {
   return {
@@ -62,12 +100,20 @@ function loadSettings() {
   const settingsPath = getSettingsPath();
 
   try {
-    if (!fs.existsSync(settingsPath)) {
-      return defaults;
-    }
+    if (!fs.existsSync(settingsPath)) return defaults;
 
     const raw = fs.readFileSync(settingsPath, "utf8");
     const parsed = JSON.parse(raw);
+
+    // Decrypt any encrypted keys — migrate plaintext on next save
+    for (const key of ENCRYPTABLE_KEYS) {
+      const encKey = `${key}${ENCRYPTED_KEY_SUFFIX}`;
+      if (parsed[encKey]) {
+        parsed[key] = decryptApiKey(parsed[encKey]);
+        delete parsed[encKey];
+      }
+    }
+
     return { ...defaults, ...parsed };
   } catch (error) {
     console.error("Failed to load settings:", error);
@@ -77,15 +123,57 @@ function loadSettings() {
 
 function saveSettings(nextSettings) {
   settings = { ...settings, ...nextSettings };
+
+  // Build what goes to disk: encrypt API keys, strip plaintext versions
+  const onDisk = { ...settings };
+  for (const key of ENCRYPTABLE_KEYS) {
+    if (onDisk[key]) {
+      if (canEncrypt()) {
+        onDisk[`${key}${ENCRYPTED_KEY_SUFFIX}`] = encryptApiKey(onDisk[key]);
+        delete onDisk[key];
+      }
+      // If encryption not available, fall through and store plaintext
+    }
+  }
+
   fs.mkdirSync(path.dirname(getSettingsPath()), { recursive: true });
-  fs.writeFileSync(getSettingsPath(), JSON.stringify(settings, null, 2), "utf8");
+  fs.writeFileSync(getSettingsPath(), JSON.stringify(onDisk, null, 2), "utf8");
   return settings;
 }
 
+// ── History ───────────────────────────────────────────────────────────────────
+
+function getHistoryPath() {
+  return path.join(app.getPath("userData"), HISTORY_FILE_NAME);
+}
+
+function loadHistoryFromDisk() {
+  try {
+    const historyPath = getHistoryPath();
+    if (!fs.existsSync(historyPath)) return [];
+    const raw = fs.readFileSync(historyPath, "utf8");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.slice(0, 50) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistoryToDisk(entries) {
+  try {
+    fs.mkdirSync(path.dirname(getHistoryPath()), { recursive: true });
+    fs.writeFileSync(getHistoryPath(), JSON.stringify(entries.slice(0, 50), null, 2), "utf8");
+  } catch (error) {
+    console.error("Failed to save history:", error);
+  }
+}
+
+// ── Window ────────────────────────────────────────────────────────────────────
+
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 460,
-    height: 780,
+    width: 560,
+    height: 820,
     show: false,
     frame: false,
     resizable: true,
@@ -107,7 +195,7 @@ function createWindow() {
   });
 
   mainWindow.on("blur", () => {
-    if (!mainWindow.webContents.isDevToolsOpened()) {
+    if (!isPinned && !mainWindow.webContents.isDevToolsOpened()) {
       mainWindow.hide();
     }
   });
@@ -117,6 +205,8 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ── Text capture ──────────────────────────────────────────────────────────────
+
 async function simulateCopyShortcut() {
   if (process.platform === "darwin") {
     if (!systemPreferences.isTrustedAccessibilityClient(false)) {
@@ -124,7 +214,6 @@ async function simulateCopyShortcut() {
         "Accessibility permission is not granted. Open the Setup tab and allow Quick Rewrite in System Settings."
       );
     }
-
     await execFileAsync("osascript", [
       "-e",
       'tell application "System Events" to keystroke "c" using command down',
@@ -191,7 +280,6 @@ async function simulatePasteToSourceApp() {
 
 async function captureSelectedText() {
   originalClipboard = clipboard.readText();
-
   await simulateCopyShortcut();
   await delay(COPY_WAIT_MS);
 
@@ -207,6 +295,8 @@ async function captureSelectedText() {
 
   return "";
 }
+
+// ── Window positioning ────────────────────────────────────────────────────────
 
 function positionWindowNearCursor() {
   const point = screen.getCursorScreenPoint();
@@ -229,9 +319,7 @@ function positionWindowNearCursor() {
 
 function showMainWindow() {
   positionWindowNearCursor();
-  if (mainWindow.isMinimized()) {
-    mainWindow.restore();
-  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.setAlwaysOnTop(true);
   mainWindow.focus();
@@ -243,7 +331,7 @@ async function openRewriteWindow() {
     try {
       sourceApp = await captureSourceApp();
     } catch {
-      // Non-fatal: Replace won't be available, but rewrite still works
+      // Non-fatal
     }
 
     const selectedText = await captureSelectedText();
@@ -268,10 +356,10 @@ async function openRewriteWindow() {
   }
 }
 
+// ── Shortcut ──────────────────────────────────────────────────────────────────
+
 function registerShortcut(shortcut = settings.shortcut) {
-  if (!shortcut || !shortcut.trim()) {
-    throw new Error("Shortcut cannot be empty.");
-  }
+  if (!shortcut || !shortcut.trim()) throw new Error("Shortcut cannot be empty.");
 
   globalShortcut.unregisterAll();
 
@@ -294,13 +382,15 @@ function registerShortcut(shortcut = settings.shortcut) {
   shortcutRegistered = true;
 }
 
+// ── Permissions ───────────────────────────────────────────────────────────────
+
 function getPermissionStatus() {
   const providerConfigured =
     settings.provider === "openai"
       ? Boolean(settings.openaiApiKey || process.env.OPENAI_API_KEY)
       : Boolean(settings.openrouterApiKey || process.env.OPENROUTER_API_KEY);
 
-  const status = {
+  return {
     platform: process.platform,
     provider: settings.provider,
     providerConfigured,
@@ -309,18 +399,13 @@ function getPermissionStatus() {
     accessibility: {
       supported: process.platform === "darwin",
       granted: process.platform === "darwin" ? systemPreferences.isTrustedAccessibilityClient(false) : null,
-      label:
-        process.platform === "darwin"
-          ? "Accessibility"
-          : "Accessibility-style automation",
+      label: process.platform === "darwin" ? "Accessibility" : "Accessibility-style automation",
       helpText:
         process.platform === "darwin"
           ? "Required so the app can trigger Cmd+C in the focused app and capture your selected text."
           : "Windows does not expose the same Accessibility trust switch. Text capture still depends on the active app allowing simulated Ctrl+C.",
     },
   };
-
-  return status;
 }
 
 async function openPermissionSettings() {
@@ -340,12 +425,11 @@ async function openPermissionSettings() {
 }
 
 function broadcastPermissionStatus() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-
+  if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send("permissions:loaded", getPermissionStatus());
 }
+
+// ── Tray ──────────────────────────────────────────────────────────────────────
 
 function createTrayIcon() {
   const svg = `
@@ -359,9 +443,7 @@ function createTrayIcon() {
 }
 
 function createTray() {
-  if (tray) {
-    tray.destroy();
-  }
+  if (tray) tray.destroy();
 
   tray = new Tray(createTrayIcon());
   tray.setToolTip(`Quick Rewrite (${settings.shortcut})`);
@@ -375,12 +457,7 @@ function createTray() {
           broadcastPermissionStatus();
         },
       },
-      {
-        label: "Quit",
-        click: () => {
-          app.quit();
-        },
-      },
+      { label: "Quit", click: () => app.quit() },
     ])
   );
 
@@ -391,18 +468,64 @@ function createTray() {
   });
 }
 
-ipcMain.handle("prompt:getDefault", () => SYSTEM_PROMPT);
+// ── Auto-updater ──────────────────────────────────────────────────────────────
 
-ipcMain.handle("rewrite:run", async (_event, inputText) => {
-  if (!inputText || !inputText.trim()) {
-    throw new Error("Please select text first.");
-  }
+function setupAutoUpdater() {
+  if (!autoUpdater) return;
 
-  return streamRewriteText(inputText.trim(), settings, (card) => {
+  autoUpdater.on("update-available", (info) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send("rewrite:card", card);
+      mainWindow.webContents.send("update:available", { version: info.version });
     }
   });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("update:downloaded", { version: info.version });
+    }
+  });
+
+  autoUpdater.on("error", (err) => {
+    console.error("Auto-updater error:", err.message);
+  });
+
+  // Check for updates after a short delay so the app finishes launching first
+  setTimeout(() => {
+    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+  }, 5000);
+}
+
+// ── IPC handlers ──────────────────────────────────────────────────────────────
+
+ipcMain.handle("prompt:getDefault", () => SYSTEM_PROMPT);
+
+ipcMain.handle("rewrite:run", async (_event, inputText, options = {}) => {
+  if (!inputText || !inputText.trim()) throw new Error("Please select text first.");
+
+  // Abort any in-flight request before starting a new one
+  if (currentAbortController) {
+    currentAbortController.abort();
+  }
+  currentAbortController = new AbortController();
+  const { signal } = currentAbortController;
+
+  try {
+    return await streamRewriteText(inputText.trim(), settings, (card) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("rewrite:card", card);
+      }
+    }, { signal, length: options.length });
+  } finally {
+    currentAbortController = null;
+  }
+});
+
+ipcMain.handle("rewrite:abort", () => {
+  if (currentAbortController) {
+    currentAbortController.abort();
+    currentAbortController = null;
+  }
+  return { ok: true };
 });
 
 ipcMain.handle("clipboard:write", async (_event, text) => {
@@ -434,6 +557,11 @@ ipcMain.handle("window:hide", async () => {
   return { ok: true };
 });
 
+ipcMain.handle("window:set-pinned", async (_event, pinned) => {
+  isPinned = Boolean(pinned);
+  return { ok: true };
+});
+
 ipcMain.handle("settings:get", async () => settings);
 
 ipcMain.handle("settings:save", async (_event, nextSettings) => {
@@ -452,9 +580,7 @@ ipcMain.handle("settings:save", async (_event, nextSettings) => {
 
   const merged = saveSettings(mergedDraft);
 
-  if (tray) {
-    tray.setToolTip(`Quick Rewrite (${merged.shortcut})`);
-  }
+  if (tray) tray.setToolTip(`Quick Rewrite (${merged.shortcut})`);
 
   mainWindow.webContents.send("settings:loaded", merged);
   broadcastPermissionStatus();
@@ -473,7 +599,6 @@ ipcMain.handle("permissions:request-accessibility", async () => {
   if (process.platform !== "darwin") {
     throw new Error("Accessibility permission prompt is only available on macOS.");
   }
-
   systemPreferences.isTrustedAccessibilityClient(true);
   const status = getPermissionStatus();
   broadcastPermissionStatus();
@@ -489,11 +614,26 @@ ipcMain.handle("provider:test", async (_event, testSettings) => {
   return testProviderConnection(testSettings);
 });
 
+ipcMain.handle("history:get", async () => loadHistoryFromDisk());
+
+ipcMain.handle("history:save", async (_event, entries) => {
+  saveHistoryToDisk(entries);
+  return { ok: true };
+});
+
+ipcMain.handle("updater:install", async () => {
+  if (autoUpdater) autoUpdater.quitAndInstall();
+  return { ok: true };
+});
+
+// ── App lifecycle ─────────────────────────────────────────────────────────────
+
 app.whenReady().then(() => {
   settings = loadSettings();
   createWindow();
   createTray();
   registerShortcut();
+  setupAutoUpdater();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0 || !mainWindow || mainWindow.isDestroyed()) {

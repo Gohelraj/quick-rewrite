@@ -7,6 +7,13 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <!-- Update banner -->
+    <div id="updateBanner" class="updateBanner isHidden">
+      <span id="updateBannerText">A new version is ready.</span>
+      <button id="installUpdateButton" class="updateBannerBtn" type="button">Restart &amp; Update</button>
+      <button id="dismissUpdateButton" class="updateBannerDismiss" type="button" aria-label="Dismiss">✕</button>
+    </div>
+
     <div class="shell">
 
       <!-- ── Top navigation bar ── -->
@@ -18,8 +25,18 @@
           <button id="showSettingsTab" class="segTab">Settings</button>
           <button id="showHistoryTab" class="segTab">History</button>
         </div>
-        <button id="closeButton" class="dismissBtn" aria-label="Close">✕</button>
+        <div class="topBarActions">
+          <button id="pinButton" class="iconBtn" title="Pin window (keep open)" aria-label="Pin window" aria-pressed="false">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M8.5 1.5L12.5 5.5L9.5 8.5L9 11L5 7L2 10M5 7L3 5.5L6 2.5L8.5 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button id="closeButton" class="dismissBtn" title="Hide (Esc)" aria-label="Hide">✕</button>
+        </div>
       </nav>
+
+      <!-- ── Toast container ── -->
+      <div id="toastContainer" class="toastContainer" aria-live="polite"></div>
 
       <!-- ══ Rewrite tab ══ -->
       <section id="rewritePanel" class="tabPanel">
@@ -38,9 +55,21 @@
           </div>
         </div>
 
+        <!-- Length control chips -->
+        <div class="lengthRow" role="group" aria-label="Output length">
+          <span class="lengthLabel">Length:</span>
+          <button class="lengthChip isActive" data-length="same" type="button">Same</button>
+          <button class="lengthChip" data-length="shorter" type="button">Shorter</button>
+          <button class="lengthChip" data-length="longer" type="button">Longer</button>
+        </div>
+
         <!-- Actions -->
         <div class="actionRow">
-          <button id="rewriteButton" class="primaryButton actionPrimary">Generate Suggestions</button>
+          <button id="rewriteButton" class="primaryButton actionPrimary" type="button">
+            Rewrite
+            <span class="kbdHint">⌘↵</span>
+          </button>
+          <button id="stopButton" class="ghostButton stopButton isHidden" type="button">Stop</button>
           <button id="clearButton" class="ghostButton" type="button">Clear</button>
         </div>
 
@@ -62,7 +91,7 @@
           </div>
 
           <div id="emptyState" class="emptyState">
-            Select text in any app, press your shortcut, then click <strong>Generate Suggestions</strong>.
+            Select text in any app, press your shortcut, then click <strong>Rewrite</strong>.
           </div>
 
           <div id="resultsContainer"></div>
@@ -112,19 +141,32 @@
             <div class="formGroup">
               <p class="formGroupLabel">OpenRouter</p>
               <label class="fieldLabel" for="openrouterApiKey">API key</label>
-              <input id="openrouterApiKey" name="openrouterApiKey" class="textInput" type="password" placeholder="sk-or-…" />
+              <div class="passwordRow">
+                <input id="openrouterApiKey" name="openrouterApiKey" class="textInput passwordInput" type="password" placeholder="sk-or-…" />
+                <button type="button" class="eyeBtn" data-target="openrouterApiKey" aria-label="Show/hide API key">
+                  <svg class="eyeIcon eyeShow" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.4"/></svg>
+                  <svg class="eyeIcon eyeHide isHidden" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 2l12 12M6.5 6.6A2 2 0 0010 10M1 8s1.2-2.4 3.5-3.8M7 3.1C7.3 3 7.7 3 8 3c4.5 0 7 5 7 5s-.8 1.6-2.2 2.9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                </button>
+              </div>
               <div class="testRow">
                 <button type="button" id="testOpenRouterButton" class="ghostButton compactButton">Test Connection</button>
                 <span id="testOpenRouterStatus" class="testStatus"></span>
               </div>
               <label class="fieldLabel" for="openrouterModel">Model</label>
               <input id="openrouterModel" name="openrouterModel" class="textInput" placeholder="openai/gpt-4.1-mini" />
-              <label class="fieldLabel" for="openrouterBaseUrl">Base URL</label>
-              <input id="openrouterBaseUrl" name="openrouterBaseUrl" class="textInput" placeholder="https://openrouter.ai/api/v1" />
-              <label class="fieldLabel" for="openrouterHttpReferer">HTTP Referer</label>
-              <input id="openrouterHttpReferer" name="openrouterHttpReferer" class="textInput" />
-              <label class="fieldLabel" for="openrouterAppTitle">App title</label>
-              <input id="openrouterAppTitle" name="openrouterAppTitle" class="textInput" />
+
+              <!-- Advanced disclosure -->
+              <details class="advancedDisclosure">
+                <summary class="advancedToggle">Advanced settings</summary>
+                <div class="advancedBody">
+                  <label class="fieldLabel" for="openrouterBaseUrl">Base URL</label>
+                  <input id="openrouterBaseUrl" name="openrouterBaseUrl" class="textInput" placeholder="https://openrouter.ai/api/v1" />
+                  <label class="fieldLabel" for="openrouterHttpReferer">HTTP Referer</label>
+                  <input id="openrouterHttpReferer" name="openrouterHttpReferer" class="textInput" />
+                  <label class="fieldLabel" for="openrouterAppTitle">App title</label>
+                  <input id="openrouterAppTitle" name="openrouterAppTitle" class="textInput" />
+                </div>
+              </details>
             </div>
           </div>
 
@@ -133,20 +175,29 @@
             <div class="formGroup">
               <p class="formGroupLabel">OpenAI</p>
               <label class="fieldLabel" for="openaiApiKey">API key</label>
-              <input id="openaiApiKey" name="openaiApiKey" class="textInput" type="password" placeholder="sk-…" />
+              <div class="passwordRow">
+                <input id="openaiApiKey" name="openaiApiKey" class="textInput passwordInput" type="password" placeholder="sk-…" />
+                <button type="button" class="eyeBtn" data-target="openaiApiKey" aria-label="Show/hide API key">
+                  <svg class="eyeIcon eyeShow" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.4"/></svg>
+                  <svg class="eyeIcon eyeHide isHidden" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 2l12 12M6.5 6.6A2 2 0 0010 10M1 8s1.2-2.4 3.5-3.8M7 3.1C7.3 3 7.7 3 8 3c4.5 0 7 5 7 5s-.8 1.6-2.2 2.9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                </button>
+              </div>
               <div class="testRow">
                 <button type="button" id="testOpenAIButton" class="ghostButton compactButton">Test Connection</button>
                 <span id="testOpenAIStatus" class="testStatus"></span>
               </div>
               <label class="fieldLabel" for="openaiModel">Model</label>
               <input id="openaiModel" name="openaiModel" class="textInput" placeholder="gpt-4.1-mini" />
-              <label class="fieldLabel" for="openaiBaseUrl">Base URL</label>
-              <input id="openaiBaseUrl" name="openaiBaseUrl" class="textInput" placeholder="https://api.openai.com/v1" />
-            </div>
-          </div>
 
-          <div class="formFooter">
-            <button id="saveSettingsButton" type="submit" class="primaryButton">Save Settings</button>
+              <!-- Advanced disclosure -->
+              <details class="advancedDisclosure">
+                <summary class="advancedToggle">Advanced settings</summary>
+                <div class="advancedBody">
+                  <label class="fieldLabel" for="openaiBaseUrl">Base URL</label>
+                  <input id="openaiBaseUrl" name="openaiBaseUrl" class="textInput" placeholder="https://api.openai.com/v1" />
+                </div>
+              </details>
+            </div>
           </div>
 
           <div class="formDivider"></div>
@@ -155,7 +206,10 @@
             <p class="formGroupLabel">Custom Prompt</p>
             <div class="promptActions">
               <label class="fieldLabel" for="customPromptTextarea">System prompt</label>
-              <button type="button" id="resetPromptButton" class="ghostButton compactButton">Reset to default</button>
+              <div class="promptActionsRight">
+                <span id="promptCharCount" class="promptCharCount">0 chars</span>
+                <button type="button" id="resetPromptButton" class="ghostButton compactButton">Reset</button>
+              </div>
             </div>
             <textarea
               id="customPromptTextarea"
@@ -163,7 +217,11 @@
               class="textInput promptInput"
               placeholder="Loading default prompt…"
             ></textarea>
-            <p class="fieldHint">Override the default AI instructions. Useful for changing the tone focus, language, or writing style. Leave blank to restore the default behavior.</p>
+            <p class="fieldHint">Override the default AI instructions. Leave blank to restore default behavior.</p>
+          </div>
+
+          <div class="formFooter">
+            <button id="saveSettingsButton" type="submit" class="primaryButton">Save Settings</button>
           </div>
 
         </form>
@@ -174,10 +232,14 @@
 
         <div class="setupHead">
           <div>
-            <h2 class="setupTitle">Permissions & Readiness</h2>
+            <h2 class="setupTitle">Permissions &amp; Readiness</h2>
             <p class="setupSub">Three things need to be ready before Quick Rewrite works.</p>
           </div>
           <button id="refreshPermissionsButton" class="ghostButton" type="button">Refresh</button>
+        </div>
+
+        <div id="setupSuccessBanner" class="setupSuccessBanner isHidden">
+          Everything is ready — use your shortcut to start rewriting!
         </div>
 
         <div class="checkList">
@@ -219,14 +281,15 @@
         </div>
 
       </section>
+
       <!-- ══ History tab ══ -->
       <section id="historyPanel" class="tabPanel isHidden">
         <div class="setupHead">
           <div>
             <h2 class="setupTitle">Rewrite History</h2>
-            <p class="setupSub">Past rewrites from this session. Click any entry to restore it.</p>
+            <p class="setupSub">Past rewrites — persisted across sessions. Click to restore.</p>
           </div>
-          <button id="clearHistoryButton" class="ghostButton compactButton" type="button">Clear</button>
+          <button id="clearHistoryButton" class="ghostButton compactButton" type="button">Clear All</button>
         </div>
 
         <div id="historyEmpty" class="emptyState">
