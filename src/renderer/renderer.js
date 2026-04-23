@@ -668,19 +668,17 @@ document.addEventListener("keydown", (event) => {
 
 // ── IPC event handlers ────────────────────────────────────────────────────────
 window.rewriteHelper.onSelectionLoaded(({ selectedText, shortcut, settings, canReplace: cr }) => {
-  canReplace = cr || false;
-  resultsContainer.innerHTML = "";
-  hideLoadingState();
-  resultsSummary.classList.add("isHidden");
-  emptyState.classList.remove("isHidden");
-  sourceText.value = "";
-  updateSourceMeta();
-
   if (settings) populateSettingsForm(settings);
   shortcutText.textContent = shortcut;
   showTab("rewrite");
 
   if (selectedText) {
+    // Fresh selection — reset everything and load the new text
+    canReplace = cr || false;
+    resultsContainer.innerHTML = "";
+    hideLoadingState();
+    resultsSummary.classList.add("isHidden");
+    emptyState.classList.remove("isHidden");
     sourceText.value = selectedText;
     updateSourceMeta();
     setStatus("Selected text loaded.");
@@ -694,22 +692,18 @@ window.rewriteHelper.onSelectionLoaded(({ selectedText, shortcut, settings, canR
       setStatus(`Add a ${providerName} API key in Settings to start generating.`, true);
     }
   } else {
+    // No selection — preserve whatever the user already has in the textarea
+    canReplace = false;
     setStatus("No fresh selection found. You can paste text manually.", true);
-    sourceText.focus();
+    if (!sourceText.value.trim()) sourceText.focus();
   }
 });
 
 window.rewriteHelper.onSelectionError(({ message, shortcut, settings }) => {
   canReplace = false;
-  resultsContainer.innerHTML = "";
-  hideLoadingState();
-  resultsSummary.classList.add("isHidden");
-  emptyState.classList.remove("isHidden");
-  sourceText.value = "";
-  updateSourceMeta();
-
   if (settings) populateSettingsForm(settings);
   shortcutText.textContent = shortcut;
+  // Preserve existing textarea content — only show the error
   setStatus(message, true);
 });
 
